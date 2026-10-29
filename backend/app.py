@@ -115,6 +115,15 @@ def create_app() -> Flask:
         if frontend_dist.exists() and target_file.exists() and target_file.is_file():
             return send_from_directory(str(frontend_dist), path)
 
+        # Check if route-specific prerendered HTML exists (e.g. /flashcards.html)
+        prerendered_file = frontend_dist / f"{path}.html"
+        if frontend_dist.exists() and prerendered_file.exists():
+            return send_from_directory(str(frontend_dist), f"{path}.html")
+
+        prerendered_dir = frontend_dist / path / "index.html"
+        if frontend_dist.exists() and prerendered_dir.exists():
+            return send_from_directory(str(frontend_dist / path), "index.html")
+
         # Catch-all fallback for client-side routing (e.g. /flashcards, /quiz, /blurt)
         if frontend_dist.exists() and (frontend_dist / "index.html").exists():
             return send_from_directory(str(frontend_dist), "index.html")
