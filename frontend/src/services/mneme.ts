@@ -171,11 +171,9 @@ export function useUploadDocument() {
 }
 
 export function useDecks() {
-  const [decks, setDecks] = useState<Deck[]>(() => getStoredJson(LOCAL_DECKS_KEY, []));
+  const [decks, setDecks] = useState<Deck[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeDeckId, setActiveDeckIdState] = useState<string>(() =>
-    getStoredJson(LOCAL_ACTIVE_DECK_KEY, "")
-  );
+  const [activeDeckId, setActiveDeckIdState] = useState<string>("");
 
   const setActiveDeckId = useCallback((id: string) => {
     setActiveDeckIdState(id);
@@ -202,30 +200,40 @@ export function useDecks() {
         setDecks(mapped);
         setStoredJson(LOCAL_DECKS_KEY, mapped);
 
-        if (!activeDeckId && mapped.length > 0) {
-          setActiveDeckId(mapped[0].id);
-        }
+        setActiveDeckIdState((prevActive) => {
+          const exists = mapped.some((d) => d.id === prevActive);
+          if (exists && prevActive) return prevActive;
+          const nextActive = mapped[0]?.id || "";
+          setStoredJson(LOCAL_ACTIVE_DECK_KEY, nextActive);
+          return nextActive;
+        });
       }
     } catch (e) {
       console.error("Failed to load decks:", e);
     } finally {
       setLoading(false);
     }
-  }, [activeDeckId, setActiveDeckId]);
+  }, []);
 
   const deleteDeck = useCallback(
     async (deckId: string) => {
       try {
         const res = await fetch(`/api/v1/decks/${deckId}`, { method: "DELETE" });
-        if (res.ok) {
+        // Idempotent: whether 200 or 404 (already deleted), remove it from client state!
+        if (res.ok || res.status === 404) {
           setDecks((prev) => {
             const next = prev.filter((d) => d.id !== deckId);
             setStoredJson(LOCAL_DECKS_KEY, next);
-            if (activeDeckId === deckId) {
-              const newActive = next[0]?.id || "";
-              setActiveDeckId(newActive);
-            }
             return next;
+          });
+          setActiveDeckIdState((prevActive) => {
+            if (prevActive === deckId) {
+              const remaining = decks.filter((d) => d.id !== deckId);
+              const nextActive = remaining[0]?.id || "";
+              setStoredJson(LOCAL_ACTIVE_DECK_KEY, nextActive);
+              return nextActive;
+            }
+            return prevActive;
           });
           return true;
         }
@@ -234,14 +242,14 @@ export function useDecks() {
       }
       return false;
     },
-    [activeDeckId, setActiveDeckId]
+    [decks]
   );
 
   const deleteDocument = useCallback(
     async (docId: string) => {
       try {
         const res = await fetch(`/api/v1/documents/${docId}`, { method: "DELETE" });
-        if (res.ok) {
+        if (res.ok || res.status === 404) {
           await refresh();
           return true;
         }
@@ -254,6 +262,15 @@ export function useDecks() {
   );
 
   useEffect(() => {
+    // Hydration safe: sync initial cached data in browser only after mount
+    const cachedDecks = getStoredJson<Deck[]>(LOCAL_DECKS_KEY, []);
+    if (cachedDecks.length > 0) {
+      setDecks(cachedDecks);
+    }
+    const cachedActiveId = getStoredJson<string>(LOCAL_ACTIVE_DECK_KEY, "");
+    if (cachedActiveId) {
+      setActiveDeckIdState(cachedActiveId);
+    }
     refresh();
   }, [refresh]);
 
@@ -322,9 +339,7 @@ export function useStudyDeck(targetMode?: "flashcards" | "quiz") {
 export function useDocuments() {
   const [documents, setDocuments] = useState<MnemeDocument[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeDocId, setActiveDocIdState] = useState<string>(() =>
-    getStoredJson(LOCAL_DOC_KEY, "")
-  );
+  const [activeDocId, setActiveDocIdState] = useState<string>("");
 
   const setActiveDocId = useCallback((id: string) => {
     setActiveDocIdState(id);
@@ -339,22 +354,26 @@ export function useDocuments() {
         const data = await res.json();
         const docs = data.documents || [];
         setDocuments(docs);
-        if (!activeDocId && docs.length > 0) {
-          setActiveDocId(docs[0].document_id);
-        }
+        setActiveDocIdState((prevDoc) => {
+          const docExists = docs.some((d: any) => d.document_id === prevDoc);
+          if (docExists && prevDoc) return prevDoc;
+          const nextDoc = docs[0]?.document_id || "";
+          setStoredJson(LOCAL_DOC_KEY, nextDoc);
+          return nextDoc;
+        });
       }
     } catch (e) {
       console.error("Failed to load documents:", e);
     } finally {
       setLoading(false);
     }
-  }, [activeDocId, setActiveDocId]);
+  }, []);
 
   const deleteDocument = useCallback(
     async (docId: string) => {
       try {
         const res = await fetch(`/api/v1/documents/${docId}`, { method: "DELETE" });
-        if (res.ok) {
+        if (res.ok || res.status === 404) {
           await refresh();
           return true;
         }
@@ -367,6 +386,10 @@ export function useDocuments() {
   );
 
   useEffect(() => {
+    const storedDoc = getStoredJson<string>(LOCAL_DOC_KEY, "");
+    if (storedDoc) {
+      setActiveDocIdState(storedDoc);
+    }
     refresh();
   }, [refresh]);
 

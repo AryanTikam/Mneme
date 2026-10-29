@@ -440,12 +440,10 @@ def get_deck(deck_id: str) -> Response:
 
 @api_bp.route("/decks/<deck_id>", methods=["DELETE"])
 def delete_deck(deck_id: str) -> Response:
-    """Delete a flashcard/quiz deck for the current user."""
+    """Delete a flashcard/quiz deck for the current user (idempotent)."""
     user_id = _get_request_user_id()
     deleted = mongo_manager.delete_deck(deck_id, user_id)
-    if not deleted:
-        return jsonify({"error": "Deck not found or already deleted"}), 404
-    logger.info("Deleted deck %s for user %s", deck_id, user_id)
+    logger.info("Deleted deck %s for user %s (existed: %s)", deck_id, user_id, deleted)
     return jsonify({"status": "deleted", "deck_id": deck_id})
 
 
@@ -482,12 +480,10 @@ def list_documents() -> Response:
 
 @api_bp.route("/documents/<document_id>", methods=["DELETE"])
 def delete_document(document_id: str) -> Response:
-    """Delete an uploaded document and its associated decks/vectors."""
+    """Delete an uploaded document and its associated decks/vectors (idempotent)."""
     user_id = _get_request_user_id()
     deleted = mongo_manager.delete_document(document_id, user_id)
-    if not deleted:
-        return jsonify({"error": "Document not found or already deleted"}), 404
-    logger.info("Deleted document %s and associated decks for user %s", document_id, user_id)
+    logger.info("Deleted document %s and associated decks for user %s (existed: %s)", document_id, user_id, deleted)
     return jsonify({"status": "deleted", "document_id": document_id})
 
 
