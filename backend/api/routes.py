@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Generator
 from pathlib import Path
 
@@ -28,13 +29,30 @@ from services.database import mongo_manager
 from services.embedding_service import embedding_service
 from services.llm_service import get_llm_service
 from services.qdrant_service import qdrant_service
-from tasks.celery_tasks import generate_deck_task, ingest_pdf_task
+from tasks.celery_tasks import (
+    execute_generate_deck,
+    execute_ingest,
+    generate_deck_task,
+    ingest_pdf_task,
+)
 from workflows.blurt_graph import blurt_graph
 from workflows.chat_graph import chat_graph, intent_router_node, retrieve_context_node
 
 logger = logging.getLogger("mneme.api")
 
 api_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
+
+_task_executor = ThreadPoolExecutor(max_workers=4)
+_in_memory_task_status: Dict[str, Dict[str, Any]] = {}
+
+
+def _is_celery_worker_active() -> bool:
+    """Check if any Celery worker is currently live and receiving tasks."""
+    try:
+        pings = celery_app.control.ping(timeout=0.3)
+        return bool(pings)
+    except Exception:
+        return False
 
 
 def _get_request_user_id() -> str:
@@ -82,22 +100,45 @@ def upload_document() -> Response:
         "file_size": os.path.getsize(str(save_path)),
     })
 
-    # Dispatch asynchronous background task via Celery
-    try:
-        task = ingest_pdf_task.delay(
-            file_path=str(save_path),
-            document_id=document_id,
-            user_id=user_id,
-            filename=filename,
-        )
-        task_id = task.id
-    except Exception as exc:
-        logger.warning("Celery broker unavailable (%s). Running ingestion synchronously as fallback.", exc)
+    # Dispatch via Celery worker if available, or background thread fallback
+    if _is_celery_worker_active():
         try:
-            ingest_pdf_task.apply(args=[str(save_path), document_id, user_id, filename])
-        except Exception as task_err:
-            logger.error("Direct task execution error: %s", task_err)
-        task_id = f"sync_{document_id}"
+            task = ingest_pdf_task.delay(
+                file_path=str(save_path),
+                document_id=document_id,
+                user_id=user_id,
+                filename=filename,
+            )
+            task_id = task.id
+            logger.info("Queued ingestion via Celery worker: task_id=%s", task_id)
+        except Exception as exc:
+            logger.warning("Celery dispatch error (%s). Running in background thread pool.", exc)
+            task_id = f"bg_{uuid.uuid4().hex[:12]}"
+            _in_memory_task_status[task_id] = {"status": "PROGRESS", "progress": 20}
+
+            def _run_bg_ingest():
+                try:
+                    res = execute_ingest(str(save_path), document_id, user_id, filename)
+                    _in_memory_task_status[task_id] = {"status": "SUCCESS", "progress": 100, "result": res}
+                except Exception as err:
+                    logger.error("Background ingestion failed: %s", err)
+                    _in_memory_task_status[task_id] = {"status": "FAILURE", "error": str(err)}
+
+            _task_executor.submit(_run_bg_ingest)
+    else:
+        logger.info("No active Celery worker found. Running ingestion in background thread pool.")
+        task_id = f"bg_{uuid.uuid4().hex[:12]}"
+        _in_memory_task_status[task_id] = {"status": "PROGRESS", "progress": 20}
+
+        def _run_bg_ingest():
+            try:
+                res = execute_ingest(str(save_path), document_id, user_id, filename)
+                _in_memory_task_status[task_id] = {"status": "SUCCESS", "progress": 100, "result": res}
+            except Exception as err:
+                logger.error("Background ingestion failed: %s", err)
+                _in_memory_task_status[task_id] = {"status": "FAILURE", "error": str(err)}
+
+        _task_executor.submit(_run_bg_ingest)
 
     return jsonify({
         "task_id": task_id,
@@ -129,21 +170,44 @@ def generate_deck() -> Response:
     if mode not in ("flashcards", "quiz"):
         return jsonify({"error": "mode must be 'flashcards' or 'quiz'"}), 400
 
-    # Dispatch Celery deck generation task
-    try:
-        task = generate_deck_task.delay(
-            document_id=document_id,
-            user_id=user_id,
-            mode=mode,
-        )
-        task_id = task.id
-    except Exception as exc:
-        logger.warning("Celery broker unavailable (%s). Running deck generation synchronously.", exc)
+    # Dispatch via Celery worker if available, or background thread fallback
+    if _is_celery_worker_active():
         try:
-            generate_deck_task.apply(args=[document_id, user_id, mode])
-        except Exception as task_err:
-            logger.error("Direct deck generation execution error: %s", task_err)
-        task_id = f"sync_{document_id}_{mode}"
+            task = generate_deck_task.delay(
+                document_id=document_id,
+                user_id=user_id,
+                mode=mode,
+            )
+            task_id = task.id
+            logger.info("Queued deck generation via Celery worker: task_id=%s", task_id)
+        except Exception as exc:
+            logger.warning("Celery dispatch error (%s). Running in background thread pool.", exc)
+            task_id = f"bg_{uuid.uuid4().hex[:12]}"
+            _in_memory_task_status[task_id] = {"status": "PROGRESS", "progress": 30}
+
+            def _run_bg_deck():
+                try:
+                    res = execute_generate_deck(document_id, user_id, mode=mode)
+                    _in_memory_task_status[task_id] = {"status": "SUCCESS", "progress": 100, "result": res}
+                except Exception as err:
+                    logger.error("Background deck generation failed: %s", err)
+                    _in_memory_task_status[task_id] = {"status": "FAILURE", "error": str(err)}
+
+            _task_executor.submit(_run_bg_deck)
+    else:
+        logger.info("No active Celery worker found. Running deck generation in background thread pool.")
+        task_id = f"bg_{uuid.uuid4().hex[:12]}"
+        _in_memory_task_status[task_id] = {"status": "PROGRESS", "progress": 30}
+
+        def _run_bg_deck():
+            try:
+                res = execute_generate_deck(document_id, user_id, mode=mode)
+                _in_memory_task_status[task_id] = {"status": "SUCCESS", "progress": 100, "result": res}
+            except Exception as err:
+                logger.error("Background deck generation failed: %s", err)
+                _in_memory_task_status[task_id] = {"status": "FAILURE", "error": str(err)}
+
+        _task_executor.submit(_run_bg_deck)
 
     return jsonify({
         "task_id": task_id,
@@ -159,13 +223,20 @@ def generate_deck() -> Response:
 
 @api_bp.route("/tasks/<task_id>", methods=["GET"])
 def get_task_status(task_id: str) -> Response:
-    """Poll the status and progress of a background Celery task."""
+    """Poll the status and progress of a background Celery or fallback task."""
     if task_id.startswith("sync_"):
         return jsonify({
             "task_id": task_id,
             "status": "SUCCESS",
             "progress": 100,
             "result": {"status": "completed"},
+        })
+
+    if task_id in _in_memory_task_status:
+        info = _in_memory_task_status[task_id]
+        return jsonify({
+            "task_id": task_id,
+            **info,
         })
 
     try:
@@ -367,6 +438,17 @@ def get_deck(deck_id: str) -> Response:
     return jsonify({"deck": deck})
 
 
+@api_bp.route("/decks/<deck_id>", methods=["DELETE"])
+def delete_deck(deck_id: str) -> Response:
+    """Delete a flashcard/quiz deck for the current user."""
+    user_id = _get_request_user_id()
+    deleted = mongo_manager.delete_deck(deck_id, user_id)
+    if not deleted:
+        return jsonify({"error": "Deck not found or already deleted"}), 404
+    logger.info("Deleted deck %s for user %s", deck_id, user_id)
+    return jsonify({"status": "deleted", "deck_id": deck_id})
+
+
 @api_bp.route("/decks/<deck_id>/review", methods=["POST"])
 def record_deck_review(deck_id: str) -> Response:
     """Record an active recall spaced-repetition rating (1-5) for a card."""
@@ -398,6 +480,17 @@ def list_documents() -> Response:
     return jsonify({"documents": docs})
 
 
+@api_bp.route("/documents/<document_id>", methods=["DELETE"])
+def delete_document(document_id: str) -> Response:
+    """Delete an uploaded document and its associated decks/vectors."""
+    user_id = _get_request_user_id()
+    deleted = mongo_manager.delete_document(document_id, user_id)
+    if not deleted:
+        return jsonify({"error": "Document not found or already deleted"}), 404
+    logger.info("Deleted document %s and associated decks for user %s", document_id, user_id)
+    return jsonify({"status": "deleted", "document_id": document_id})
+
+
 # ============================================================================
 # 7. System Health Endpoint
 # ============================================================================
@@ -412,6 +505,6 @@ def health_check() -> Response:
         "qdrant_connected": qdrant_service.is_connected,
         "llm_loaded": llm.is_loaded,
         "llm_fallback_mode": llm.fallback_mode,
-        "model_name": settings.MODEL_NAME,
+        "model_name": llm.model_name,
     }
     return jsonify(status)

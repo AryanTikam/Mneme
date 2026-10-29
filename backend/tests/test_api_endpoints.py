@@ -60,7 +60,7 @@ def test_upload_document_endpoint():
     # Valid PDF file simulation
     fake_pdf = io.BytesIO(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF")
     data = {
-        "file": (fake_pdf, "neuroscience_notes.pdf")
+        "file": (fake_pdf, "lecture_notes.pdf")
     }
 
     res = client.post(
@@ -83,7 +83,7 @@ def test_deck_generation_endpoint():
     client = app.test_client()
 
     payload = {
-        "document_id": "doc_test_neuro",
+        "document_id": "doc_test_course",
         "mode": "flashcards",
     }
 
@@ -97,7 +97,7 @@ def test_deck_generation_endpoint():
     assert res.status_code == 202
     data = res.get_json()
     assert "task_id" in data
-    assert data["document_id"] == "doc_test_neuro"
+    assert data["document_id"] == "doc_test_course"
     assert data["mode"] == "flashcards"
 
 
@@ -119,8 +119,8 @@ def test_blurt_evaluate_endpoint():
     client = app.test_client()
 
     payload = {
-        "document_id": "doc_test_neuro",
-        "blurt_text": "The hippocampus controls declarative memory consolidation and connects short term to long term storage.",
+        "document_id": "doc_test_course",
+        "blurt_text": "Operating systems manage hardware resources, process scheduling, and virtual memory isolation.",
     }
 
     res = client.post(
@@ -144,8 +144,8 @@ def test_chat_stream_endpoint():
 
     payload = {
         "session_id": "sess_stream_1",
-        "message": "Can you explain how spaced repetition works?",
-        "document_id": "doc_test_neuro",
+        "message": "Can you explain how virtual memory page tables work?",
+        "document_id": "doc_test_course",
     }
 
     res = client.post(
@@ -169,4 +169,40 @@ def test_chat_stream_endpoint():
     last_event = json.loads(data_events[-1].replace("data: ", ""))
     assert last_event["done"] is True
     assert "full_text" in last_event
+
+
+def test_delete_deck_and_document():
+    """Verify DELETE /api/v1/decks/<deck_id> and DELETE /api/v1/documents/<doc_id>."""
+    app = create_app()
+    client = app.test_client()
+
+    # Insert test deck
+    from services.database import mongo_manager
+    mongo_manager.save_deck({
+        "deck_id": "deck_to_delete_99",
+        "title": "Temp Delete Deck",
+        "document_id": "doc_to_delete_99",
+        "user_id": "test_user_77",
+        "mode": "flashcards",
+        "cards_count": 2,
+        "items": [],
+    })
+
+    # Test delete deck
+    res = client.delete("/api/v1/decks/deck_to_delete_99", headers={"X-User-Id": "test_user_77"})
+    assert res.status_code == 200
+    assert res.get_json()["status"] == "deleted"
+
+    # Insert test document
+    mongo_manager.insert_document({
+        "document_id": "doc_to_delete_99",
+        "user_id": "test_user_77",
+        "filename": "delete_me.pdf",
+        "status": "ready",
+    })
+
+    # Test delete document
+    res_doc = client.delete("/api/v1/documents/doc_to_delete_99", headers={"X-User-Id": "test_user_77"})
+    assert res_doc.status_code == 200
+    assert res_doc.get_json()["status"] == "deleted"
 

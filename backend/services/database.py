@@ -39,11 +39,12 @@ class MongoManager:
     def _init_client(self) -> None:
         """Initialize MongoDB client and collections."""
         try:
-            logger.info("Connecting to MongoDB at %s...", settings.MONGO_URI)
+            redacted_uri = settings.MONGO_URI.split("@")[-1] if "@" in settings.MONGO_URI else settings.MONGO_URI
+            logger.info("Connecting to MongoDB at %s...", redacted_uri)
             self._client = MongoClient(
                 settings.MONGO_URI,
-                serverSelectionTimeoutMS=2500,
-                connectTimeoutMS=2500,
+                serverSelectionTimeoutMS=8000,
+                connectTimeoutMS=8000,
             )
             # Ping database to verify connection
             self._client.admin.command("ping")
@@ -108,12 +109,14 @@ class MongoManager:
         return doc_id
 
     def get_document(self, document_id: str, user_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve document metadata with user isolation."""
+        """Retrieve document metadata with user isolation and fallback."""
         if self._is_connected and self._db is not None:
             doc = self._db.documents.find_one({"document_id": document_id, "user_id": user_id}, {"_id": 0})
+            if not doc and user_id in ("user_default", ""):
+                doc = self._db.documents.find_one({"document_id": document_id}, {"_id": 0})
             return doc
         doc = self._mock_storage.get("documents", {}).get(document_id)
-        if doc and doc.get("user_id") == user_id:
+        if doc and (doc.get("user_id") == user_id or user_id in ("user_default", "")):
             return dict(doc)
         return None
 
@@ -167,6 +170,36 @@ class MongoManager:
             d for d in self._mock_storage.get("decks", {}).values()
             if d.get("user_id") == user_id
         ]
+
+    def delete_deck(self, deck_id: str, user_id: str) -> bool:
+        """Delete a deck with tenant isolation."""
+        if self._is_connected and self._db is not None:
+            res = self._db.decks.delete_one({"deck_id": deck_id, "user_id": user_id})
+            return res.deleted_count > 0
+        if deck_id in self._mock_storage.get("decks", {}):
+            if self._mock_storage["decks"][deck_id].get("user_id") == user_id:
+                del self._mock_storage["decks"][deck_id]
+                return True
+        return False
+
+    def delete_document(self, document_id: str, user_id: str) -> bool:
+        """Delete a document and all decks associated with it."""
+        if self._is_connected and self._db is not None:
+            self._db.decks.delete_many({"document_id": document_id, "user_id": user_id})
+            res = self._db.documents.delete_one({"document_id": document_id, "user_id": user_id})
+            return res.deleted_count > 0
+        deleted = False
+        if document_id in self._mock_storage.get("documents", {}):
+            if self._mock_storage["documents"][document_id].get("user_id") == user_id:
+                del self._mock_storage["documents"][document_id]
+                deleted = True
+        to_del = [
+            did for did, d in self._mock_storage.get("decks", {}).items()
+            if d.get("document_id") == document_id and d.get("user_id") == user_id
+        ]
+        for did in to_del:
+            del self._mock_storage["decks"][did]
+        return deleted
 
     def record_review(self, user_id: str, card_id: str, deck_id: str, rating: int, recall_interval_days: int) -> None:
         """Record spaced repetition review result (e.g. SM-2 item rating)."""

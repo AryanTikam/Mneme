@@ -10,6 +10,18 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+from dotenv import load_dotenv
+
+# Search and load .env from root or backend directory
+_root_env = Path(__file__).resolve().parent.parent / ".env"
+_backend_env = Path(__file__).resolve().parent / ".env"
+
+if _root_env.exists():
+    load_dotenv(dotenv_path=_root_env, override=True)
+elif _backend_env.exists():
+    load_dotenv(dotenv_path=_backend_env, override=True)
+else:
+    load_dotenv(override=True)
 
 
 @dataclass(frozen=True)
@@ -102,12 +114,15 @@ class Settings:
         )
     )
 
-    # AI / LLM Core Settings
-    MODEL_NAME: str = field(
-        default_factory=lambda: os.getenv("MODEL_NAME", "google/gemma-2b-it")
+    # AI / LLM Core Settings (GroqCloud Qwen 27B)
+    GROQ_API_KEY: str = field(
+        default_factory=lambda: os.getenv("GROQ_API_KEY", "").strip()
     )
-    USE_4BIT_QUANT: bool = field(
-        default_factory=lambda: os.getenv("USE_4BIT_QUANT", "true").lower() in ("1", "true", "yes")
+    GROQ_MODEL: str = field(
+        default_factory=lambda: os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b").strip()
+    )
+    MODEL_NAME: str = field(
+        default_factory=lambda: os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
     )
     EMBEDDING_MODEL_NAME: str = field(
         default_factory=lambda: os.getenv(
@@ -117,8 +132,9 @@ class Settings:
     LLM_TEMPERATURE: float = field(
         default_factory=lambda: float(os.getenv("LLM_TEMPERATURE", "0.2"))
     )
+    # Set default max output tokens to 650 to strictly satisfy Groq's 1000 OTPM rate limit on Qwen 27B
     LLM_MAX_NEW_TOKENS: int = field(
-        default_factory=lambda: int(os.getenv("LLM_MAX_NEW_TOKENS", "1024"))
+        default_factory=lambda: int(os.getenv("LLM_MAX_NEW_TOKENS", "650"))
     )
     DEFAULT_USER_ID: str = field(
         default_factory=lambda: os.getenv("DEFAULT_USER_ID", "user_default")

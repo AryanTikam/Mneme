@@ -168,7 +168,8 @@ class QdrantService:
                 match=models.MatchValue(value=user_id),
             )
         ]
-        if document_id:
+        has_specific_doc = bool(document_id and document_id not in ("default", "all", ""))
+        if has_specific_doc:
             must_conditions.append(
                 models.FieldCondition(
                     key="document_id",
@@ -214,7 +215,7 @@ class QdrantService:
         filtered_points = [
             pt for pt in self._mock_points.values()
             if pt["payload"].get("user_id") == user_id
-            and (not document_id or pt["payload"].get("document_id") == document_id)
+            and (not has_specific_doc or pt["payload"].get("document_id") == document_id)
         ]
 
         def cosine_similarity(v1: List[float], v2: List[float]) -> float:

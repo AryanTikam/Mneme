@@ -73,7 +73,7 @@ def intent_router_node(state: ChatState) -> Dict[str, Any]:
         "Determine if the user is asking a question ('ask') or trying to explain/teach a concept ('teach'). "
         "Rules:\n"
         "- If the user asks for information, definitions, or queries ('What is...', 'How does...', 'Why...', '?'), classify as 'ask'.\n"
-        "- If the user explains, summarizes, or presents a concept in their own words ('The hippocampus works by...', 'Memory is stored when...'), classify as 'teach'.\n"
+        "- If the user explains, summarizes, or presents a concept in their own words ('A binary search tree works by...', 'Virtual memory is allocated when...'), classify as 'teach'.\n"
         "Output ONLY a JSON object: {\"intent_type\": \"ask\"} or {\"intent_type\": \"teach\"}."
     )
 

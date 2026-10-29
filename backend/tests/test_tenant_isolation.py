@@ -13,10 +13,10 @@ def test_tenant_isolation_payload_filtering():
     """Verify that User A cannot retrieve documents owned by User B."""
     user_a = "user_alpha_123"
     user_b = "user_beta_456"
-    doc_a = "doc_neuroscience"
+    doc_a = "doc_comp_arch"
     doc_b = "doc_economics"
 
-    chunks_a = ["The hippocampus consolidates declarative memory in the medial temporal lobe."]
+    chunks_a = ["The central processing unit executes instructions fetched from register cache and system memory."]
     chunks_b = ["Supply and demand equilibrium determines market clearing prices in macroeconomics."]
 
     emb_a = embedding_service.embed_documents(chunks_a)

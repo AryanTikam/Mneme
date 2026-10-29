@@ -1,10 +1,11 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Database, Send, Sparkles, X } from "lucide-react";
+import { BookOpen, Database, Send, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useChatStream } from "@/services/mneme";
+import { useChatStream, useDocuments } from "@/services/mneme";
 
 export function ChatDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { messages, simplicity, send } = useChatStream();
+  const { documents, activeDocId, setActiveDocId } = useDocuments();
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
@@ -12,7 +13,7 @@ export function ChatDrawer({ open, onOpenChange }: { open: boolean; onOpenChange
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    send(input.trim(), "neuro");
+    send(input.trim(), activeDocId);
     setInput("");
   };
   const tone = simplicity > 66 ? "bg-success" : simplicity > 40 ? "bg-primary" : "bg-destructive";
@@ -35,6 +36,24 @@ export function ChatDrawer({ open, onOpenChange }: { open: boolean; onOpenChange
                 </div>
                 <button onClick={() => onOpenChange(false)} aria-label="Close" className="rounded-full p-2 text-muted-foreground hover:bg-muted"><X className="h-5 w-5" /></button>
               </div>
+
+              {/* Document / Material Context Selector */}
+              <div className="mt-3 flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-primary shrink-0" />
+                <select
+                  value={activeDocId || "all"}
+                  onChange={(e) => setActiveDocId(e.target.value === "all" ? "" : e.target.value)}
+                  className="w-full text-xs bg-muted/80 border border-border/60 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary truncate font-medium"
+                >
+                  <option value="all">📚 All Uploaded Materials</option>
+                  {documents.map((doc) => (
+                    <option key={doc.document_id} value={doc.document_id}>
+                      📄 {doc.filename}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="mt-4">
                 <div className="mb-1.5 flex justify-between text-xs font-medium">
                   <span className="text-muted-foreground">Simplicity Score</span>

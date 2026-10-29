@@ -2,7 +2,7 @@
 
 Production-grade middleware and API backend for **Mneme**, an AI-powered Active Recall platform.
 
-Powered by **Flask (async)**, **Celery + Redis**, **MongoDB (PyMongo / Motor)**, **Qdrant (Vector DB)**, and **LangGraph** with local 4-bit **google/gemma-2b-it** (BitsAndBytes QLoRA).
+Powered by **Flask (async)**, **Celery + Redis**, **MongoDB (PyMongo / Motor)**, **Qdrant (Vector DB)**, and **LangGraph** with **GroqCloud LangChain** (`qwen/qwen3.8-27b`).
 
 ---
 
@@ -18,9 +18,9 @@ Mneme/
 │   ├── api/
 │   │   ├── __init__.py
 │   │   └── routes.py              # Flask Blueprint: REST Endpoints & SSE Streaming
-│   ├── services/
+│   │   ├── services/
 │   │   ├── __init__.py
-│   │   ├── llm_service.py         # Thread-safe Singleton 4-bit Gemma 2B Manager
+│   │   ├── llm_service.py         # Thread-safe Singleton GroqCloud Qwen 27B Manager
 │   │   ├── database.py            # Multi-Tenant MongoDB Collection Manager
 │   │   ├── qdrant_service.py      # Qdrant Vector Client with Mandatory Tenant Isolation
 │   │   └── embedding_service.py   # Text Embedding Generator
@@ -53,9 +53,8 @@ Mneme/
    - Every single vector query and chunk upsert in Qdrant strictly enforces payload filtering by `user_id`.
    - Keyword payload indexes on `user_id` and `document_id` ensure microsecond query performance across millions of document chunks.
 2. **Singleton LLM Manager**:
-   - `google/gemma-2b-it` in 4-bit BitsAndBytes quantization (`nf4`, double quantization, `torch.float16`) is loaded into GPU VRAM exactly once as a thread-safe singleton.
-   - Prevents catastrophic VRAM Out-Of-Memory (OOM) crashes across concurrent web requests.
-   - Comprehensive error recovery intercepts `torch.cuda.OutOfMemoryError` and empties GPU cache gracefully.
+   - High-performance `qwen/qwen3.8-27b` served via LangChain GroqCloud API.
+   - Sub-second generation and real-time Server-Sent Events (SSE) token streaming.
 3. **Resilient Fallback Storage**:
    - If MongoDB, Qdrant, or Redis instances are temporarily offline, the backend transitions automatically to an in-memory fallback layer, ensuring unit tests and development servers never crash.
 
@@ -64,7 +63,7 @@ Mneme/
 ## 🧠 LangGraph Workflows
 
 ### 1. Flashcard / Quiz Graph (`generator_graph.py`)
-- **Nodes**: `Generate` (invokes Gemma) ➔ `ValidateJSON` (validates with Pydantic).
+- **Nodes**: `Generate` (invokes Groq Qwen 27B) ➔ `ValidateJSON` (validates with Pydantic).
 - **Self-Correction Edge**: If Pydantic validation fails, loops back to `Generate` with an error feedback prompt (up to 3 retries) before terminating.
 
 ### 2. Blurt Mode Graph (`blurt_graph.py`)

@@ -1,7 +1,7 @@
 """Flashcard and Quiz Generator LangGraph Workflow.
 
 Implements iterative self-correction loop:
-Generate (Gemma 2B) -> ValidateJSON (Pydantic) -> loop back if invalid (max 3 retries).
+Generate (Groq Qwen 27B) -> ValidateJSON (Pydantic) -> loop back if invalid (max 3 retries).
 """
 
 from __future__ import annotations
@@ -29,11 +29,9 @@ logger = logging.getLogger("mneme.workflows.generator")
 def _extract_json_block(text: str) -> str:
     """Robustly extract a JSON array or object from LLM response text."""
     text = text.strip()
-    # Match markdown json block
     match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
     if match:
         return match.group(1).strip()
-    # Find first '[' or '{' and last ']' or '}'
     first_bracket = min(
         [idx for idx in [text.find("["), text.find("{")] if idx != -1],
         default=-1,
@@ -44,27 +42,53 @@ def _extract_json_block(text: str) -> str:
     return text
 
 
+def _robust_parse_json(text: str) -> Any:
+    """Parse JSON with automatic structural recovery for unclosed arrays."""
+    extracted = _extract_json_block(text)
+    try:
+        return json.loads(extracted)
+    except json.JSONDecodeError:
+        # If output was truncated before closing ']', repair at last valid object '}'
+        if "[" in extracted:
+            start_bracket = extracted.find("[")
+            last_brace = extracted.rfind("}")
+            if last_brace > start_bracket:
+                repaired = extracted[start_bracket : last_brace + 1] + "]"
+                try:
+                    return json.loads(repaired)
+                except Exception:
+                    pass
+        raise
+
+
 def generate_node(state: GeneratorState) -> Dict[str, Any]:
-    """Invoke Gemma 2B to generate structured JSON for flashcards or quiz items."""
+    """Invoke Groq Qwen 27B to generate structured JSON for flashcards or quiz items."""
     mode = state.get("mode", "flashcards")
     raw_text = state.get("raw_text", "")
     retry_count = state.get("retry_count", 0)
     error_message = state.get("error_message")
     previous_output = state.get("llm_output", "")
 
-    # Base prompt instructions
+    # Base prompt instructions with explicit target item counts to respect token quotas
     if mode == "flashcards":
         system_instruction = (
-            "You are an expert cognitive learning assistant. Create high-yield active recall flashcards "
-            "based strictly on the provided study notes. Each flashcard must have a concise 'front' question "
-            "or stimulus and an informative 'back' answer. Output ONLY a valid JSON array of objects:\n"
+            "You are an expert cognitive learning assistant. Create exactly 5 high-yield active recall flashcards "
+            "based strictly on the provided study notes. Focus exclusively on core technical concepts, principles, "
+            "formulas, algorithms, derivations, definitions, and mechanisms. "
+            "CRITICAL: Do NOT create cards about author names, college affiliations, email addresses, or publication metadata. "
+            "Each flashcard must have a concise 'front' question and a concise 'back' answer. "
+            "Output ONLY a valid JSON array of 5 objects:\n"
             '[{"front": "Question...", "back": "Answer..."}]'
         )
     else:
         system_instruction = (
-            "You are an expert examiner. Generate multiple-choice quiz questions based strictly on the provided study notes. "
-            "Each item must contain 'question', 'options' (array of 4 choices), 'answer' (0-indexed integer of the correct option), "
-            "and 'explanation' (why that option is correct). Output ONLY a valid JSON array of objects:\n"
+            "You are an expert university examiner. Generate exactly 4 multiple-choice diagnostic quiz questions based strictly on the provided study notes. "
+            "Focus exclusively on core concepts, theoretical principles, equations, mechanisms, and key results. "
+            "CRITICAL: Do NOT create questions about author names, college affiliations, email addresses, or publication metadata. "
+            "Each item must contain 'question', 'options' (array of 4 distinct choices with 1 correct answer and 3 plausible distractors), "
+            "'answer' (0-indexed integer of the correct option: 0, 1, 2, or 3), "
+            "and 'explanation' (detailed explanation of why the correct option is right). "
+            "Output ONLY a valid JSON array of 4 objects:\n"
             '[{"question": "...", "options": ["A", "B", "C", "D"], "answer": 0, "explanation": "..."}]'
         )
 
@@ -86,7 +110,7 @@ def generate_node(state: GeneratorState) -> Dict[str, Any]:
     raw_completion = llm.generate(
         prompt=user_prompt,
         system_prompt=system_instruction,
-        max_new_tokens=1024,
+        max_new_tokens=650,
         temperature=0.1,  # Lower temperature for strict JSON adherence
     )
 
@@ -94,15 +118,13 @@ def generate_node(state: GeneratorState) -> Dict[str, Any]:
 
 
 def validate_json_node(state: GeneratorState) -> Dict[str, Any]:
-    """Validate the raw LLM output against Pydantic schemas."""
+    """Validate the raw LLM output against Pydantic schemas with auto-repair."""
     raw_output = state.get("llm_output", "")
     mode = state.get("mode", "flashcards")
     current_retries = state.get("retry_count", 0)
 
-    json_str = _extract_json_block(raw_output)
-
     try:
-        parsed_data = json.loads(json_str)
+        parsed_data = _robust_parse_json(raw_output)
 
         # Allow single list or wrapped object
         if isinstance(parsed_data, dict):

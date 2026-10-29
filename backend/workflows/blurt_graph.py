@@ -64,7 +64,7 @@ def query_qdrant_node(state: BlurtState) -> Dict[str, Any]:
 
 
 def compare_llm_node(state: BlurtState) -> Dict[str, Any]:
-    """Invoke Gemma 2B to compare user blurt with retrieved chunks and produce semantic diff."""
+    """Invoke Groq Qwen 27B to compare user blurt with retrieved chunks and produce semantic diff."""
     blurt_text = state.get("blurt_text", "")
     retrieved_chunks = state.get("retrieved_chunks", [])
 
@@ -73,7 +73,7 @@ def compare_llm_node(state: BlurtState) -> Dict[str, Any]:
     ground_truth = "\n\n".join(context_texts) if context_texts else "General domain knowledge."
 
     system_instruction = (
-        "You are an elite cognitive neuroscience active-recall auditor. "
+        "You are an elite active-recall auditor. "
         "Your task is to perform a semantic difference evaluation between the Ground Truth study notes "
         "and the Student's Recall Blurt. "
         "Extract: "

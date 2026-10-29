@@ -14,10 +14,9 @@ from workflows.state import FlashcardDeckModel, QuizDeckModel
 def test_generator_graph_flashcards():
     """Verify Flashcard generation LangGraph creates validated flashcards."""
     sample_text = (
-        "The hippocampus is a complex brain structure embedded deep into temporal lobe. "
-        "It has a major role in learning and memory. It is a plastic and vulnerable structure "
-        "that gets damaged by a variety of stimuli. Long-term potentiation (LTP) is a persistent "
-        "strengthening of synapses based on recent patterns of activity."
+        "Relational database management systems organize data into structured tables linked by primary and foreign keys. "
+        "Database normalization reduces data redundancy and improves data integrity through normal forms. "
+        "ACID transactions guarantee atomicity, consistency, isolation, and durability across concurrent operations."
     )
 
     initial_state = {
@@ -49,10 +48,8 @@ def test_generator_graph_flashcards():
 def test_generator_graph_quiz():
     """Verify Quiz generation LangGraph creates validated MCQs."""
     sample_text = (
-        "Spaced repetition is an evidence-based learning technique that incorporates "
-        "increasing intervals of time between subsequent review of previously learned material. "
-        "The testing effect demonstrates that active retrieval practice produces superior "
-        "long-term retention compared to passive study techniques such as re-reading."
+        "Operating system kernels coordinate process concurrency, manage virtual memory pagination, and control device drivers. "
+        "Context switching allows the CPU to transition execution between distinct processes by saving and restoring thread registers."
     )
 
     initial_state = {
@@ -83,11 +80,11 @@ def test_blurt_graph_evaluation():
     initial_state = {
         "user_id": "test_user_blurt",
         "document_id": "doc_blurt_test",
-        "blurt_text": "The hippocampus is responsible for memory consolidation and working with short term traces.",
+        "blurt_text": "Binary search trees maintain sorted order with logarithmic search time complexity on balanced structures.",
         "blurt_embedding": None,
         "retrieved_chunks": [
-            {"text": "The hippocampus consolidates short-term memories into long-term storage via long-term potentiation."},
-            {"text": "Spaced repetition combats the Ebbinghaus forgetting curve by scheduling expanding review intervals."}
+            {"text": "A self-balancing binary search tree such as an AVL or Red-Black tree guarantees O(log n) search, insertion, and deletion operations."},
+            {"text": "Tree traversals include in-order, pre-order, and post-order depth-first search strategies."}
         ],
         "recalled_concepts": [],
         "missed_concepts": [],
@@ -106,9 +103,9 @@ def test_chat_graph_intent_router_and_execution():
     """Verify IntentRouter logic and Unified Chat Graph execution."""
     # Test 'ask' intent
     state_ask = {
-        "user_message": "What is the function of the hippocampus?",
+        "user_message": "What is a hash collision in data structures?",
         "chat_history": [],
-        "retrieved_context": "The hippocampus binds declarative memories.",
+        "retrieved_context": "Hash tables map keys to buckets, and collisions occur when two keys produce the same hash index.",
         "intent_type": "",
         "ai_response": "",
         "user_id": "test_user_chat",
@@ -125,9 +122,9 @@ def test_chat_graph_intent_router_and_execution():
 
     # Test 'teach' intent
     state_teach = {
-        "user_message": "Memory consolidation works because the hippocampus temporarily holds information before transferring it to the cortex.",
+        "user_message": "Hash tables map arbitrary keys to integer buckets using a hash function, resolving collisions via separate chaining.",
         "chat_history": [],
-        "retrieved_context": "The hippocampus temporarily holds traces and consolidates them to the neocortex.",
+        "retrieved_context": "Hash tables resolve collisions using separate chaining or open addressing with probing sequences.",
         "intent_type": "",
         "ai_response": "",
         "user_id": "test_user_chat",
