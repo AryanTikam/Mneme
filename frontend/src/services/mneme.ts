@@ -1496,7 +1496,7 @@ export function useChatStream() {
         );
       }
     },
-    [activeDocId]
+    []
   );
 
   return { messages, simplicity, send };

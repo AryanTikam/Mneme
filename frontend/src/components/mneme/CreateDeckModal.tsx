@@ -86,18 +86,27 @@ export function CreateDeckModal({
 
           <div>
             <label className="text-xs font-semibold text-muted-foreground">Theme Color</label>
-            <div className="mt-2 flex items-center gap-3 px-1 py-1">
-              {FOLDER_COLORS.map((c) => (
-                <button
-                  type="button"
-                  key={c.value}
-                  onClick={() => setColor(c.value)}
-                  className={`h-5 w-5 rounded-full ${c.dot} transition-transform focus:outline-none ${
-                    color === c.value ? "ring-2 ring-primary ring-offset-2 ring-offset-card scale-110 shadow-sm" : "opacity-60 hover:opacity-100 hover:scale-105"
-                  }`}
-                  title={c.label}
-                />
-              ))}
+            <div className="mt-2 flex items-center gap-1.5">
+              {FOLDER_COLORS.map((c) => {
+                const isSelected = color === c.value;
+                return (
+                  <button
+                    type="button"
+                    key={c.value}
+                    onClick={() => setColor(c.value)}
+                    className="relative flex h-6 w-6 items-center justify-center rounded-full transition focus:outline-none shrink-0"
+                    title={c.label}
+                  >
+                    <span
+                      className={`h-3.5 w-3.5 rounded-full ${c.dot} transition-all ${
+                        isSelected
+                          ? "ring-2 ring-primary ring-offset-2 ring-offset-card shadow-sm"
+                          : "opacity-60 hover:opacity-100"
+                      }`}
+                    />
+                  </button>
+                );
+              })}
             </div>
           </div>
 

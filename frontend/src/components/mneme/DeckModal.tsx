@@ -289,9 +289,9 @@ export function DeckModal({
                 </div>
 
                 {/* Color Selector */}
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-medium text-muted-foreground shrink-0">Color:</span>
-                  <div className="flex items-center gap-2.5 px-1 py-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground shrink-0 mr-1">Color:</span>
+                  <div className="flex items-center gap-1.5">
                     {FOLDER_COLORS.map((c) => {
                       const isSelected = deck.color === c.value;
                       return (
@@ -299,13 +299,17 @@ export function DeckModal({
                           key={c.value}
                           type="button"
                           onClick={() => handleColorChange(c.value)}
-                          className={`h-4 w-4 rounded-full ${c.dot} transition-transform focus:outline-none ${
-                            isSelected
-                              ? "ring-2 ring-primary ring-offset-2 ring-offset-card scale-110 shadow-sm"
-                              : "opacity-60 hover:opacity-100 hover:scale-105"
-                          }`}
+                          className="relative flex h-6 w-6 items-center justify-center rounded-full transition focus:outline-none shrink-0"
                           title={c.label}
-                        />
+                        >
+                          <span
+                            className={`h-3.5 w-3.5 rounded-full ${c.dot} transition-all ${
+                              isSelected
+                                ? "ring-2 ring-primary ring-offset-2 ring-offset-card shadow-sm"
+                                : "opacity-60 hover:opacity-100"
+                            }`}
+                          />
+                        </button>
                       );
                     })}
                   </div>
