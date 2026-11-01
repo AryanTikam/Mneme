@@ -45,10 +45,10 @@ export function ChatDrawer({ open, onOpenChange }: { open: boolean; onOpenChange
                   onChange={(e) => setActiveDocId(e.target.value === "all" ? "" : e.target.value)}
                   className="w-full text-xs bg-muted/80 border border-border/60 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary truncate font-medium"
                 >
-                  <option value="all">📚 All Uploaded Materials</option>
+                  <option value="all">All Uploaded Materials</option>
                   {documents.map((doc) => (
                     <option key={doc.document_id} value={doc.document_id}>
-                      📄 {doc.filename}
+                      {doc.filename}
                     </option>
                   ))}
                 </select>

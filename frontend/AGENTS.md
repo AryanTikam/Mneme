@@ -1,13 +1,10 @@
-<!-- LOVABLE:BEGIN -->
-> [!IMPORTANT]
-> This project is connected to [Lovable](https://lovable.dev). Avoid rewriting
-> published git history — force pushing, or rebasing/amending/squashing commits
-> that are already pushed — as it rewrites history on Lovable's side and the
-> user will likely lose their project history.
->
-> Commits you push to the connected branch sync back to Lovable and show up in
-> the editor, so keep the branch in a working state.
-<!-- LOVABLE:END -->
+# Mneme Frontend Architecture & Guidelines
 
-- Mock data hooks live in src/services/mneme.ts; swap their bodies for real FastAPI calls without changing component contracts.
-- Each study view is its own route wrapped in AppShell (src/components/mneme); the tutor chat is a drawer inside AppShell, not a route.
+- **Services**: Real backend API integration hooks reside in `src/services/mneme.ts`.
+- **Routing**: Each study view has its own route wrapped in `AppShell` (`src/components/mneme/AppShell.tsx`):
+  - `/` - Main Dashboard & PDF ingestion
+  - `/flashcards` - 3D Active recall swipe cards
+  - `/quiz` - Multiple-choice diagnostic quiz
+  - `/blurt` - Blurt mode recall auditing
+- **Chat Drawer**: The Feynman Tutor is implemented as an interactive drawer inside `AppShell`, accessible across all routes.
+- **Styling**: Tailwind CSS with custom design tokens defined in `src/styles.css`.

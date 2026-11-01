@@ -74,20 +74,26 @@ def generate_node(state: GeneratorState) -> Dict[str, Any]:
         system_instruction = (
             "You are an expert cognitive learning assistant. Create exactly 5 high-yield active recall flashcards "
             "based strictly on the provided study notes. Focus exclusively on core technical concepts, principles, "
-            "formulas, algorithms, derivations, definitions, and mechanisms. "
-            "CRITICAL: Do NOT create cards about author names, college affiliations, email addresses, or publication metadata. "
-            "Each flashcard must have a concise 'front' question and a concise 'back' answer. "
+            "formulas, algorithms, derivations, definitions, and mechanisms.\n"
+            "CRITICAL QUALITY RULES:\n"
+            "- Front and Back MUST be complete, grammatically sound, self-contained sentences or questions.\n"
+            "- NEVER output incomplete sentence fragments (e.g., 'Explain the principle: This reveals an important').\n"
+            "- Do NOT create cards about author names, college affiliations, department titles (e.g., 'Department of Computer'), emails, or publication dates.\n"
+            "Each flashcard must have a concise 'front' question and a concise 'back' answer.\n"
             "Output ONLY a valid JSON array of 5 objects:\n"
             '[{"front": "Question...", "back": "Answer..."}]'
         )
     else:
         system_instruction = (
-            "You are an expert university examiner. Generate exactly 4 multiple-choice diagnostic quiz questions based strictly on the provided study notes. "
-            "Focus exclusively on core concepts, theoretical principles, equations, mechanisms, and key results. "
-            "CRITICAL: Do NOT create questions about author names, college affiliations, email addresses, or publication metadata. "
+            "You are an expert university examiner. Generate exactly 4 multiple-choice diagnostic quiz questions based strictly on the provided study notes.\n"
+            "Focus exclusively on core concepts, theoretical principles, equations, mechanisms, and key results.\n"
+            "CRITICAL QUALITY RULES:\n"
+            "- Questions and options MUST be complete, grammatically sound statements.\n"
+            "- NEVER create questions about author names, college or department names (e.g., 'Department of Computer'), email addresses, or document headers.\n"
+            "- Distractors must be plausible conceptual alternatives.\n"
             "Each item must contain 'question', 'options' (array of 4 distinct choices with 1 correct answer and 3 plausible distractors), "
             "'answer' (0-indexed integer of the correct option: 0, 1, 2, or 3), "
-            "and 'explanation' (detailed explanation of why the correct option is right). "
+            "and 'explanation' (detailed explanation of why the correct option is right).\n"
             "Output ONLY a valid JSON array of 4 objects:\n"
             '[{"question": "...", "options": ["A", "B", "C", "D"], "answer": 0, "explanation": "..."}]'
         )

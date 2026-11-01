@@ -171,7 +171,7 @@ function FlashcardsPage() {
               >
                 {allDecks.map((d) => (
                   <option key={d.id} value={d.id}>
-                    {d.title} ({d.cards} cards)
+                    {d.title} ({d.flashcards?.length ?? 0} cards)
                   </option>
                 ))}
               </select>

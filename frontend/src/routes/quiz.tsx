@@ -123,7 +123,7 @@ function QuizPage() {
               >
                 {allDecks.map((d) => (
                   <option key={d.id} value={d.id}>
-                    {d.title} ({d.cards} questions)
+                    {d.title} ({d.quizzes?.length ?? 0} questions)
                   </option>
                 ))}
               </select>
@@ -201,10 +201,10 @@ function QuizPage() {
 
             <p className="text-sm font-semibold text-foreground">
               {percentage >= 80
-                ? "🌟 Outstanding Mastery! You have deeply retained these concepts."
+                ? "Outstanding Mastery! You have deeply retained these concepts."
                 : percentage >= 50
-                ? "🎯 Good Foundation! Review the missed questions below to solidify your understanding."
-                : "💡 Active Recall Recommended: Re-read the notes or practice flashcards to close gaps."}
+                ? "Good Foundation! Review the missed questions below to solidify your understanding."
+                : "Active Recall Recommended: Re-read the notes or practice flashcards to close gaps."}
             </p>
 
             <div className="mt-6 flex flex-wrap justify-center gap-3">

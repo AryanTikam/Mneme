@@ -1,29 +1,30 @@
-# Welcome to your Lovable project
+# Mneme — AI Active Recall Platform
 
-This project was built with [Lovable](https://lovable.dev).
+Mneme is an AI-powered active recall and knowledge consolidation studio that distills study materials into flashcards, quizzes, and Feynman-technique drills.
 
-## Build with Lovable
+## Features
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+- **Document Ingestion & Chunking**: Automatic text extraction and semantic chunking for PDF, DOCX, and Markdown.
+- **Active Recall Flashcards**: Interactive 3D flip-and-swipe cards with spaced-repetition feedback.
+- **Diagnostic Quizzes**: AI-generated multiple-choice questions with full explanations.
+- **Blurt Mode**: Active recall audit comparing student memory blurts against source material.
+- **Feynman AI Tutor**: Context-aware drawer for questioning assumptions and explaining concepts simply.
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+## Tech Stack
+
+- **Frontend**: React 19, TypeScript, TanStack Start & Router, Tailwind CSS, Framer Motion.
+- **Backend**: Flask with asynchronous support, Motor / PyMongo (MongoDB), Qdrant vector database, Celery & Redis task queue.
+- **AI Core**: GroqCloud with Qwen 27B / LangChain & LangGraph.
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+```bash
+# Install frontend dependencies
+npm install
 
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
+# Run frontend dev server
 npm run dev
+
+# Build production distribution
+npm run build
 ```
-
-## Built with
-
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS

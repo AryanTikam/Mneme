@@ -154,29 +154,44 @@ def upload_document() -> Response:
 
 @api_bp.route("/decks/generate", methods=["POST"])
 def generate_deck() -> Response:
-    """Trigger background generation of Flashcards or Quiz items from notes.
+    """Trigger background generation of Flashcards and/or Quiz items into a unified deck.
 
     JSON payload:
-        { "document_id": "...", "mode": "flashcards" | "quiz" }
+        {
+            "document_id": "...",
+            "mode": "both" | "flashcards" | "quiz",
+            "deck_id": "..." (optional, appends to existing deck),
+            "folder_id": "..." (optional),
+            "title": "..." (optional),
+            "prompt": "..." (optional topic guidance)
+        }
     """
     user_id = _get_request_user_id()
     data = request.get_json(silent=True) or {}
 
     document_id = data.get("document_id")
-    mode = data.get("mode", "flashcards")
+    mode = data.get("mode", "both")
+    deck_id = data.get("deck_id")
+    folder_id = data.get("folder_id")
+    title = data.get("title")
+    custom_prompt = data.get("prompt")
 
-    if not document_id:
-        return jsonify({"error": "document_id is required"}), 400
-    if mode not in ("flashcards", "quiz"):
-        return jsonify({"error": "mode must be 'flashcards' or 'quiz'"}), 400
+    if not document_id and not custom_prompt:
+        return jsonify({"error": "document_id or prompt is required"}), 400
+    if mode not in ("both", "flashcards", "quiz"):
+        return jsonify({"error": "mode must be 'both', 'flashcards', or 'quiz'"}), 400
 
     # Dispatch via Celery worker if available, or background thread fallback
     if _is_celery_worker_active():
         try:
             task = generate_deck_task.delay(
-                document_id=document_id,
+                document_id=document_id or "custom",
                 user_id=user_id,
                 mode=mode,
+                deck_id=deck_id,
+                folder_id=folder_id,
+                title=title,
+                custom_prompt=custom_prompt,
             )
             task_id = task.id
             logger.info("Queued deck generation via Celery worker: task_id=%s", task_id)
@@ -187,7 +202,15 @@ def generate_deck() -> Response:
 
             def _run_bg_deck():
                 try:
-                    res = execute_generate_deck(document_id, user_id, mode=mode)
+                    res = execute_generate_deck(
+                        document_id=document_id or "custom",
+                        user_id=user_id,
+                        mode=mode,
+                        deck_id=deck_id,
+                        folder_id=folder_id,
+                        title=title,
+                        custom_prompt=custom_prompt,
+                    )
                     _in_memory_task_status[task_id] = {"status": "SUCCESS", "progress": 100, "result": res}
                 except Exception as err:
                     logger.error("Background deck generation failed: %s", err)
@@ -201,7 +224,15 @@ def generate_deck() -> Response:
 
         def _run_bg_deck():
             try:
-                res = execute_generate_deck(document_id, user_id, mode=mode)
+                res = execute_generate_deck(
+                    document_id=document_id or "custom",
+                    user_id=user_id,
+                    mode=mode,
+                    deck_id=deck_id,
+                    folder_id=folder_id,
+                    title=title,
+                    custom_prompt=custom_prompt,
+                )
                 _in_memory_task_status[task_id] = {"status": "SUCCESS", "progress": 100, "result": res}
             except Exception as err:
                 logger.error("Background deck generation failed: %s", err)
@@ -213,6 +244,7 @@ def generate_deck() -> Response:
         "task_id": task_id,
         "document_id": document_id,
         "mode": mode,
+        "deck_id": deck_id,
         "status": "queued",
     }), 202
 
@@ -241,23 +273,31 @@ def get_task_status(task_id: str) -> Response:
 
     try:
         result = AsyncResult(task_id, app=celery_app)
+        try:
+            status = result.status
+        except Exception:
+            status = getattr(result, "state", "PENDING")
+
         response_data: Dict[str, Any] = {
             "task_id": task_id,
-            "status": result.status,
+            "status": status,
         }
 
-        if result.status == "PROGRESS":
-            response_data["meta"] = result.info
-        elif result.status == "SUCCESS":
-            response_data["result"] = result.result
-        elif result.status == "FAILURE":
-            response_data["error"] = str(result.result)
+        if status == "PROGRESS":
+            response_data["meta"] = getattr(result, "info", {})
+        elif status == "SUCCESS":
+            response_data["result"] = getattr(result, "result", None)
+        elif status == "FAILURE":
+            try:
+                response_data["error"] = str(result.result)
+            except Exception:
+                response_data["error"] = "Task failed during execution"
 
         return jsonify(response_data)
 
     except Exception as exc:
         logger.error("Error querying task %s: %s", task_id, exc)
-        return jsonify({"task_id": task_id, "status": "UNKNOWN", "error": str(exc)}), 500
+        return jsonify({"task_id": task_id, "status": "FAILURE", "error": str(exc)}), 200
 
 
 # ============================================================================
@@ -417,15 +457,176 @@ def chat_stream() -> Response:
 
 
 # ============================================================================
-# 6. Decks and Documents Convenience Endpoints
+# 6. User Management & Auth Endpoints
+# ============================================================================
+
+@api_bp.route("/auth/register", methods=["POST"])
+def auth_register() -> Response:
+    """Register a new user account with password."""
+    data = request.get_json(silent=True) or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    name = data.get("name", "").strip() or None
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+    try:
+        user = mongo_manager.register_user(username, password, name=name)
+        logger.info("User registered: %s (%s)", user["username"], user["user_id"])
+        return jsonify({"user": user}), 201
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 409
+
+
+@api_bp.route("/auth/login", methods=["POST"])
+def auth_login() -> Response:
+    """Authenticate user by username and password."""
+    data = request.get_json(silent=True) or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+
+    user = mongo_manager.authenticate_user(username, password)
+    if not user:
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    logger.info("User authenticated: %s (%s)", user.get("username"), user.get("user_id"))
+    return jsonify({"user": user})
+
+
+@api_bp.route("/auth/profile", methods=["DELETE"])
+def auth_delete_profile() -> Response:
+    """Permanently delete user profile and all associated data."""
+    user_id = _get_request_user_id()
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    mongo_manager.delete_user_account(user_id)
+    return jsonify({"status": "deleted", "user_id": user_id})
+
+
+@api_bp.route("/auth/me", methods=["GET"])
+def auth_me() -> Response:
+    """Retrieve current authenticated user profile."""
+    user_id = _get_request_user_id()
+    user = mongo_manager.get_user(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({"user": user})
+
+
+@api_bp.route("/users", methods=["GET"])
+def list_users() -> Response:
+    """Restricted: Private instances do not expose public user lists."""
+    return jsonify({"users": []})
+
+
+# ============================================================================
+# 7. Folder Management Endpoints
+# ============================================================================
+
+@api_bp.route("/folders", methods=["GET"])
+def list_folders() -> Response:
+    """Retrieve all folders for current user."""
+    user_id = _get_request_user_id()
+    folders = mongo_manager.list_folders(user_id)
+    return jsonify({"folders": folders})
+
+
+@api_bp.route("/folders", methods=["POST"])
+def create_folder() -> Response:
+    """Create a new folder for organizing decks."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    folder_id = f"folder_{uuid.uuid4().hex[:10]}"
+    folder_doc = {
+        "folder_id": folder_id,
+        "user_id": user_id,
+        "name": name,
+        "color": data.get("color", "indigo"),
+        "order": data.get("order", 0),
+    }
+    mongo_manager.create_folder(folder_doc)
+    logger.info("Created folder '%s' (%s) for user %s", name, folder_id, user_id)
+    return jsonify({"folder": folder_doc}), 201
+
+
+@api_bp.route("/folders/<folder_id>", methods=["PUT"])
+def update_folder(folder_id: str) -> Response:
+    """Rename or update color/order of a folder."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    updates = {k: v for k, v in data.items() if k in ("name", "color", "order")}
+    success = mongo_manager.update_folder(folder_id, user_id, updates)
+    if not success:
+        return jsonify({"error": "Folder not found"}), 404
+    updated = mongo_manager.get_folder(folder_id, user_id)
+    return jsonify({"folder": updated})
+
+
+@api_bp.route("/folders/<folder_id>", methods=["DELETE"])
+def delete_folder(folder_id: str) -> Response:
+    """Delete a folder and uncouple its decks."""
+    user_id = _get_request_user_id()
+    mongo_manager.delete_folder(folder_id, user_id)
+    return jsonify({"status": "deleted", "folder_id": folder_id})
+
+
+# ============================================================================
+# 8. Unified Decks and Document Endpoints
 # ============================================================================
 
 @api_bp.route("/decks", methods=["GET"])
 def list_decks() -> Response:
-    """Retrieve all flashcard/quiz decks for the current user."""
+    """Retrieve unified decks for the current user with search, filter, and sort."""
     user_id = _get_request_user_id()
-    decks = mongo_manager.list_decks(user_id)
+    folder_id = request.args.get("folder_id")
+    search = request.args.get("search")
+    sort_by = request.args.get("sort_by")
+
+    decks = mongo_manager.list_decks(
+        user_id=user_id,
+        folder_id=folder_id,
+        search=search,
+        sort_by=sort_by,
+    )
     return jsonify({"decks": decks})
+
+
+@api_bp.route("/decks", methods=["POST"])
+def create_deck() -> Response:
+    """Manually create a new empty or initial unified deck."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    title = data.get("title", "").strip() or "Untitled Deck"
+    folder_id = data.get("folder_id")
+    color = data.get("color", "indigo")
+
+    deck_id = f"deck_{uuid.uuid4().hex[:12]}"
+    document_ids = data.get("document_ids", [])
+    if isinstance(document_ids, str):
+        document_ids = [document_ids]
+    primary_doc_id = document_ids[0] if document_ids else data.get("document_id")
+
+    deck_doc = {
+        "deck_id": deck_id,
+        "user_id": user_id,
+        "title": title,
+        "folder_id": folder_id if folder_id and folder_id != "unorganized" else None,
+        "color": color,
+        "document_id": primary_doc_id,
+        "document_ids": document_ids or ([primary_doc_id] if primary_doc_id else []),
+        "flashcards": data.get("flashcards", []),
+        "quizzes": data.get("quizzes", []),
+        "order": data.get("order", 0),
+        "mastery": 0,
+    }
+    mongo_manager.save_deck(deck_doc)
+    logger.info("Created new deck '%s' (%s) for user %s", title, deck_id, user_id)
+    return jsonify({"deck": mongo_manager.get_deck(deck_id, user_id)}), 201
 
 
 @api_bp.route("/decks/<deck_id>", methods=["GET"])
@@ -438,13 +639,264 @@ def get_deck(deck_id: str) -> Response:
     return jsonify({"deck": deck})
 
 
+@api_bp.route("/decks/<deck_id>", methods=["PUT"])
+def update_deck(deck_id: str) -> Response:
+    """Update deck metadata (title, folder_id, color, order, document_ids)."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    allowed = ("title", "folder_id", "color", "order", "document_ids", "document_id")
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if "folder_id" in updates and updates["folder_id"] in ("unorganized", ""):
+        updates["folder_id"] = None
+
+    success = mongo_manager.update_deck(deck_id, user_id, updates)
+    if not success:
+        return jsonify({"error": "Deck not found"}), 404
+    return jsonify({"deck": mongo_manager.get_deck(deck_id, user_id)})
+
+
+@api_bp.route("/decks/<deck_id>/move", methods=["PUT"])
+def move_deck(deck_id: str) -> Response:
+    """Move deck into a folder or reorder (drag & drop handler)."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    folder_id = data.get("folder_id")
+    order = data.get("order")
+    success = mongo_manager.move_deck(deck_id, user_id, folder_id, order)
+    if not success:
+        return jsonify({"error": "Deck not found"}), 404
+    return jsonify({"status": "moved", "deck_id": deck_id, "folder_id": folder_id, "order": order})
+
+
 @api_bp.route("/decks/<deck_id>", methods=["DELETE"])
 def delete_deck(deck_id: str) -> Response:
-    """Delete a flashcard/quiz deck for the current user (idempotent)."""
+    """Delete a unified deck for the current user (idempotent)."""
     user_id = _get_request_user_id()
     deleted = mongo_manager.delete_deck(deck_id, user_id)
     logger.info("Deleted deck %s for user %s (existed: %s)", deck_id, user_id, deleted)
     return jsonify({"status": "deleted", "deck_id": deck_id})
+
+
+# ============================================================================
+# 9. Individual Card and Quiz Management within a Deck
+# ============================================================================
+
+@api_bp.route("/decks/<deck_id>/cards", methods=["POST"])
+def add_card_to_deck(deck_id: str) -> Response:
+    """Add a single new flashcard to a deck."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    front = data.get("front", "").strip()
+    back = data.get("back", "").strip()
+    if not front or not back:
+        return jsonify({"error": "front and back are required"}), 400
+
+    card = mongo_manager.add_card(deck_id, user_id, {"front": front, "back": back})
+    if not card:
+        return jsonify({"error": "Deck not found"}), 404
+    updated_deck = mongo_manager.get_deck(deck_id, user_id)
+    return jsonify({"card": card, "deck": updated_deck}), 201
+
+
+@api_bp.route("/decks/<deck_id>/cards/<card_id>", methods=["PUT"])
+def update_card_in_deck(deck_id: str, card_id: str) -> Response:
+    """Update a flashcard within a deck."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    card = mongo_manager.update_card(deck_id, user_id, card_id, data)
+    if not card:
+        return jsonify({"error": "Card or deck not found"}), 404
+    updated_deck = mongo_manager.get_deck(deck_id, user_id)
+    return jsonify({"card": card, "deck": updated_deck})
+
+
+@api_bp.route("/decks/<deck_id>/cards/<card_id>", methods=["DELETE"])
+def delete_card_from_deck(deck_id: str, card_id: str) -> Response:
+    """Delete a flashcard from a deck."""
+    user_id = _get_request_user_id()
+    success = mongo_manager.delete_card(deck_id, user_id, card_id)
+    if not success:
+        return jsonify({"error": "Card or deck not found"}), 404
+    updated_deck = mongo_manager.get_deck(deck_id, user_id)
+    return jsonify({"status": "deleted", "card_id": card_id, "deck": updated_deck})
+
+
+@api_bp.route("/decks/<deck_id>/quizzes", methods=["POST"])
+def add_quiz_to_deck(deck_id: str) -> Response:
+    """Add a single new quiz question to a deck."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    question = data.get("question", "").strip()
+    options = data.get("options", [])
+    answer = data.get("answer", 0)
+    explanation = data.get("explanation", "").strip()
+
+    if not question or not options:
+        return jsonify({"error": "question and options are required"}), 400
+
+    quiz = mongo_manager.add_quiz(
+        deck_id, user_id,
+        {"question": question, "options": options, "answer": answer, "explanation": explanation}
+    )
+    if not quiz:
+        return jsonify({"error": "Deck not found"}), 404
+    updated_deck = mongo_manager.get_deck(deck_id, user_id)
+    return jsonify({"quiz": quiz, "deck": updated_deck}), 201
+
+
+@api_bp.route("/decks/<deck_id>/quizzes/<quiz_id>", methods=["PUT"])
+def update_quiz_in_deck(deck_id: str, quiz_id: str) -> Response:
+    """Update a quiz question within a deck."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    quiz = mongo_manager.update_quiz(deck_id, user_id, quiz_id, data)
+    if not quiz:
+        return jsonify({"error": "Quiz or deck not found"}), 404
+    updated_deck = mongo_manager.get_deck(deck_id, user_id)
+    return jsonify({"quiz": quiz, "deck": updated_deck})
+
+
+@api_bp.route("/decks/<deck_id>/quizzes/<quiz_id>", methods=["DELETE"])
+def delete_quiz_from_deck(deck_id: str, quiz_id: str) -> Response:
+    """Delete a quiz question from a deck."""
+    user_id = _get_request_user_id()
+    success = mongo_manager.delete_quiz(deck_id, user_id, quiz_id)
+    if not success:
+        return jsonify({"error": "Quiz or deck not found"}), 404
+    updated_deck = mongo_manager.get_deck(deck_id, user_id)
+    return jsonify({"status": "deleted", "quiz_id": quiz_id, "deck": updated_deck})
+
+
+@api_bp.route("/decks/<deck_id>/contexts", methods=["GET"])
+def get_deck_contexts(deck_id: str) -> Response:
+    """List document contexts attached to this deck and available user documents."""
+    user_id = _get_request_user_id()
+    deck = mongo_manager.get_deck(deck_id, user_id)
+    if not deck:
+        return jsonify({"error": "Deck not found"}), 404
+
+    attached = mongo_manager.get_deck_documents(deck_id, user_id)
+    all_docs = mongo_manager.list_documents(user_id)
+    attached_ids = {d["document_id"] for d in attached}
+    available = [d for d in all_docs if d.get("document_id") not in attached_ids]
+
+    return jsonify({
+        "deck_id": deck_id,
+        "attached_documents": attached,
+        "available_documents": available,
+        "all_documents": all_docs,
+    })
+
+
+@api_bp.route("/decks/<deck_id>/contexts/attach", methods=["POST"])
+def attach_context_to_deck(deck_id: str) -> Response:
+    """Attach an existing uploaded document context to this deck."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    document_id = data.get("document_id")
+    if not document_id:
+        return jsonify({"error": "document_id is required"}), 400
+
+    ok = mongo_manager.attach_document_to_deck(deck_id, user_id, document_id)
+    if not ok:
+        return jsonify({"error": "Deck or document not found"}), 404
+    updated_deck = mongo_manager.get_deck(deck_id, user_id)
+    attached = mongo_manager.get_deck_documents(deck_id, user_id)
+    return jsonify({"status": "attached", "deck": updated_deck, "attached_documents": attached})
+
+
+@api_bp.route("/decks/<deck_id>/contexts/detach", methods=["POST"])
+def detach_context_from_deck(deck_id: str) -> Response:
+    """Detach a document context from this deck without deleting the document."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    document_id = data.get("document_id")
+    if not document_id:
+        return jsonify({"error": "document_id is required"}), 400
+
+    ok = mongo_manager.detach_document_from_deck(deck_id, user_id, document_id)
+    if not ok:
+        return jsonify({"error": "Deck not found"}), 404
+    updated_deck = mongo_manager.get_deck(deck_id, user_id)
+    attached = mongo_manager.get_deck_documents(deck_id, user_id)
+    return jsonify({"status": "detached", "deck": updated_deck, "attached_documents": attached})
+
+
+@api_bp.route("/decks/<deck_id>/contexts/upload", methods=["POST"])
+def upload_context_to_deck(deck_id: str) -> Response:
+    """Upload a study file directly into this deck's context library."""
+    user_id = _get_request_user_id()
+    deck = mongo_manager.get_deck(deck_id, user_id)
+    if not deck:
+        return jsonify({"error": "Deck not found"}), 404
+
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    file = request.files["file"]
+    if not file.filename:
+        return jsonify({"error": "Filename is empty"}), 400
+
+    from werkzeug.utils import secure_filename
+    from config import settings
+    safe_filename = secure_filename(file.filename)
+    document_id = f"doc_{uuid.uuid4().hex[:12]}"
+    saved_path = settings.UPLOAD_FOLDER / f"{document_id}_{safe_filename}"
+    file.save(str(saved_path))
+
+    mongo_manager.insert_document({
+        "document_id": document_id,
+        "user_id": user_id,
+        "filename": safe_filename,
+        "status": "ready",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    try:
+        from tasks.celery_tasks import execute_ingest
+        execute_ingest(str(saved_path), document_id, user_id, safe_filename)
+        mongo_manager.attach_document_to_deck(deck_id, user_id, document_id)
+        updated_deck = mongo_manager.get_deck(deck_id, user_id)
+        attached = mongo_manager.get_deck_documents(deck_id, user_id)
+        return jsonify({
+            "status": "uploaded",
+            "document_id": document_id,
+            "deck": updated_deck,
+            "attached_documents": attached,
+        })
+    except Exception as exc:
+        logger.error("Failed to ingest context upload for deck %s: %s", deck_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@api_bp.route("/decks/<deck_id>/generate-more", methods=["POST"])
+def generate_more_for_deck(deck_id: str) -> Response:
+    """AI generate additional flashcards or quiz items for an existing deck using attached contexts."""
+    user_id = _get_request_user_id()
+    deck = mongo_manager.get_deck(deck_id, user_id)
+    if not deck:
+        return jsonify({"error": "Deck not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    mode = data.get("mode", "both")
+    custom_prompt = data.get("prompt")
+    document_ids = data.get("document_ids") or deck.get("document_ids") or []
+    document_id = deck.get("document_id") or (document_ids[0] if document_ids else "custom")
+
+    # Run generation across all target document contexts
+    try:
+        res = execute_generate_deck(
+            document_id=document_id,
+            user_id=user_id,
+            mode=mode,
+            deck_id=deck_id,
+            custom_prompt=custom_prompt,
+            document_ids=document_ids,
+        )
+        updated = mongo_manager.get_deck(deck_id, user_id)
+        return jsonify({"status": "ready", "result": res, "deck": updated})
+    except Exception as exc:
+        logger.error("Generate more failed for deck %s: %s", deck_id, exc)
+        return jsonify({"error": str(exc)}), 500
 
 
 @api_bp.route("/decks/<deck_id>/review", methods=["POST"])
@@ -488,7 +940,7 @@ def delete_document(document_id: str) -> Response:
 
 
 # ============================================================================
-# 7. System Health Endpoint
+# 10. System Health Endpoint
 # ============================================================================
 
 @api_bp.route("/health", methods=["GET"])

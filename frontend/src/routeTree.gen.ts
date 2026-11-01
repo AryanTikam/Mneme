@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BlurtRouteImport } from './routes/blurt'
 import { Route as FlashcardsRouteImport } from './routes/flashcards'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as QuizRouteImport } from './routes/quiz'
 
 const IndexRoute = IndexRouteImport.update({
@@ -29,6 +30,11 @@ const FlashcardsRoute = FlashcardsRouteImport.update({
   path: '/flashcards',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const QuizRoute = QuizRouteImport.update({
   id: '/quiz',
   path: '/quiz',
@@ -39,12 +45,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/blurt': typeof BlurtRoute
   '/flashcards': typeof FlashcardsRoute
+  '/login': typeof LoginRoute
   '/quiz': typeof QuizRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/blurt': typeof BlurtRoute
   '/flashcards': typeof FlashcardsRoute
+  '/login': typeof LoginRoute
   '/quiz': typeof QuizRoute
 }
 export interface FileRoutesById {
@@ -52,20 +60,22 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/blurt': typeof BlurtRoute
   '/flashcards': typeof FlashcardsRoute
+  '/login': typeof LoginRoute
   '/quiz': typeof QuizRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/blurt' | '/flashcards' | '/quiz'
+  fullPaths: '/' | '/blurt' | '/flashcards' | '/login' | '/quiz'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/blurt' | '/flashcards' | '/quiz'
-  id: '__root__' | '/' | '/blurt' | '/flashcards' | '/quiz'
+  to: '/' | '/blurt' | '/flashcards' | '/login' | '/quiz'
+  id: '__root__' | '/' | '/blurt' | '/flashcards' | '/login' | '/quiz'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BlurtRoute: typeof BlurtRoute
   FlashcardsRoute: typeof FlashcardsRoute
+  LoginRoute: typeof LoginRoute
   QuizRoute: typeof QuizRoute
 }
 
@@ -92,6 +102,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FlashcardsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/quiz': {
       id: '/quiz'
       path: '/quiz'
@@ -106,6 +123,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BlurtRoute: BlurtRoute,
   FlashcardsRoute: FlashcardsRoute,
+  LoginRoute: LoginRoute,
   QuizRoute: QuizRoute,
 }
 export const routeTree = rootRouteImport

@@ -184,8 +184,8 @@ def test_delete_deck_and_document():
         "document_id": "doc_to_delete_99",
         "user_id": "test_user_77",
         "mode": "flashcards",
-        "cards_count": 2,
-        "items": [],
+        "flashcards": [{"id": "fc_1", "front": "Q1", "back": "A1"}],
+        "quizzes": [],
     })
 
     # Test delete deck
@@ -205,4 +205,89 @@ def test_delete_deck_and_document():
     res_doc = client.delete("/api/v1/documents/doc_to_delete_99", headers={"X-User-Id": "test_user_77"})
     assert res_doc.status_code == 200
     assert res_doc.get_json()["status"] == "deleted"
+
+
+def test_deck_segregated_contexts_lifecycle():
+    """Verify attaching, detaching, and querying deck-specific segregated contexts."""
+    app = create_app()
+    client = app.test_client()
+    user_id = "test_user_contexts"
+    headers = {"X-User-Id": user_id, "Content-Type": "application/json"}
+
+    from services.database import mongo_manager
+
+    # 1. Seed two segregated documents in library for user
+    mongo_manager.insert_document({
+        "document_id": "doc_ctx_alpha",
+        "user_id": user_id,
+        "filename": "alpha_lecture.pdf",
+        "chunk_count": 12,
+        "status": "ready",
+    })
+    mongo_manager.insert_document({
+        "document_id": "doc_ctx_beta",
+        "user_id": user_id,
+        "filename": "beta_notes.pdf",
+        "chunk_count": 8,
+        "status": "ready",
+    })
+
+    # 2. Create a deck with the first document attached
+    create_res = client.post(
+        "/api/v1/decks",
+        data=json.dumps({
+            "title": "Cognitive Psychology Deck",
+            "document_ids": ["doc_ctx_alpha"],
+            "color": "emerald",
+        }),
+        headers=headers,
+    )
+    assert create_res.status_code == 201
+    deck_data = create_res.get_json()["deck"]
+    deck_id = deck_data["id"]
+    assert "doc_ctx_alpha" in deck_data["document_ids"]
+
+    # 3. Query contexts for the deck
+    ctx_res = client.get(f"/api/v1/decks/{deck_id}/contexts", headers={"X-User-Id": user_id})
+    assert ctx_res.status_code == 200
+    ctx_json = ctx_res.get_json()
+    assert len(ctx_json["attached_documents"]) == 1
+    assert ctx_json["attached_documents"][0]["document_id"] == "doc_ctx_alpha"
+    assert len(ctx_json["available_documents"]) == 1
+    assert ctx_json["available_documents"][0]["document_id"] == "doc_ctx_beta"
+
+    # 4. Attach the second context document to the deck
+    attach_res = client.post(
+        f"/api/v1/decks/{deck_id}/contexts/attach",
+        data=json.dumps({"document_id": "doc_ctx_beta"}),
+        headers=headers,
+    )
+    assert attach_res.status_code == 200
+    attached_deck = attach_res.get_json()["deck"]
+    assert "doc_ctx_alpha" in attached_deck["document_ids"]
+    assert "doc_ctx_beta" in attached_deck["document_ids"]
+
+    # 5. Detach the first document from the deck
+    detach_res = client.post(
+        f"/api/v1/decks/{deck_id}/contexts/detach",
+        data=json.dumps({"document_id": "doc_ctx_alpha"}),
+        headers=headers,
+    )
+    assert detach_res.status_code == 200
+    detached_deck = detach_res.get_json()["deck"]
+    assert "doc_ctx_alpha" not in detached_deck["document_ids"]
+    assert "doc_ctx_beta" in detached_deck["document_ids"]
+
+    # Verify document itself still exists in library
+    docs_res = client.get("/api/v1/documents", headers={"X-User-Id": user_id})
+    assert docs_res.status_code == 200
+    all_doc_ids = [d["document_id"] for d in docs_res.get_json()["documents"]]
+    assert "doc_ctx_alpha" in all_doc_ids
+    assert "doc_ctx_beta" in all_doc_ids
+
+    # Clean up test deck and documents
+    client.delete(f"/api/v1/decks/{deck_id}", headers={"X-User-Id": user_id})
+    client.delete("/api/v1/documents/doc_ctx_alpha", headers={"X-User-Id": user_id})
+    client.delete("/api/v1/documents/doc_ctx_beta", headers={"X-User-Id": user_id})
+
 

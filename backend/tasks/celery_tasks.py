@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -78,6 +79,10 @@ def _safe_update_state(task_self: Any, state: str, meta: Dict[str, Any]) -> None
         req = getattr(task_self, "request", None)
         if req and getattr(req, "id", None):
             try:
+                # Ensure Celery result backend doesn't crash on FAILURE state with missing exc_type
+                if state == "FAILURE":
+                    meta.setdefault("exc_type", "Exception")
+                    meta.setdefault("exc_message", str(meta.get("error", "Task execution failed")))
                 task_self.update_state(state=state, meta=meta)
             except Exception:
                 pass
@@ -107,7 +112,10 @@ def execute_ingest(
         chunk_overlap=150,
         separators=["\n\n", "\n", ". ", " ", ""],
     )
-    chunks = splitter.split_text(extracted_text)
+    raw_chunks = splitter.split_text(extracted_text)
+    chunks = [c.strip() for c in raw_chunks if len(c.strip()) >= 50]
+    if not chunks and extracted_text.strip():
+        chunks = [extracted_text.strip()[:1000]]
     logger.info("Split document %s into %d semantic chunks.", document_id, len(chunks))
 
     _safe_update_state(task_self, "PROGRESS", {"step": "vectorizing", "progress": 70})
@@ -162,102 +170,183 @@ def execute_ingest(
 
 
 def execute_generate_deck(
-    document_id: str,
-    user_id: str,
-    mode: str = "flashcards",
+    document_id: Optional[str] = None,
+    user_id: str = "user_default",
+    mode: str = "both",
+    deck_id: Optional[str] = None,
+    folder_id: Optional[str] = None,
+    title: Optional[str] = None,
+    custom_prompt: Optional[str] = None,
+    document_ids: Optional[List[str]] = None,
     task_self: Any = None,
 ) -> Dict[str, Any]:
-    """Core logic to run LangGraph generator graph and persist deck."""
+    """Core logic to run LangGraph generator graph and persist unified deck."""
     import time
     _safe_update_state(task_self, "PROGRESS", {"step": "generating", "progress": 30})
 
-    # Retry fetching document record in case ingestion write is still settling
-    doc_record = None
-    for _ in range(4):
-        doc_record = mongo_manager.get_document(document_id, user_id)
-        if doc_record:
-            break
-        time.sleep(0.5)
+    # Gather target document context IDs (supports multiple segregated files per deck)
+    target_doc_ids: List[str] = []
+    if document_ids:
+        target_doc_ids.extend([d for d in document_ids if d and d != "custom"])
+    if document_id and document_id != "custom" and document_id not in target_doc_ids:
+        target_doc_ids.append(document_id)
 
-    # Fetch representative chunks for context from Qdrant
-    chunks = qdrant_service.search_chunks(
-        user_id=user_id,
-        query_vector=embedding_service.embed_text("key concepts principles definitions theorems algorithms"),
-        top_k=8,
-        document_id=document_id,
-    )
+    if deck_id:
+        existing_deck = mongo_manager.get_deck(deck_id, user_id)
+        if existing_deck:
+            for did in existing_deck.get("document_ids", []):
+                if did and did != "custom" and did not in target_doc_ids:
+                    target_doc_ids.append(did)
 
-    if not doc_record and not chunks:
-        # Fallback query without tenant filter in case user_id defaulted
+    source_parts: List[str] = []
+    for did in target_doc_ids:
+        # 1. Search chunks from Qdrant
         chunks = qdrant_service.search_chunks(
-            user_id="user_default",
-            query_vector=embedding_service.embed_text("key concepts principles definitions theorems algorithms"),
-            top_k=8,
-            document_id=document_id,
+            user_id=user_id,
+            query_vector=embedding_service.embed_text("key concepts principles definitions theorems algorithms explanations"),
+            top_k=6,
+            document_id=did,
         )
+        if chunks:
+            source_parts.append("\n\n".join(c.get("text", "") for c in chunks))
+            continue
 
-    if not doc_record and not chunks:
-        raise ValueError(f"Document {document_id} not found for user {user_id}")
+        # 2. Query document from MongoDB
+        doc_record = mongo_manager.get_document(did, user_id)
+        if doc_record:
+            if doc_record.get("sample_text"):
+                source_parts.append(doc_record["sample_text"][:3000])
+            elif doc_record.get("key_chunks"):
+                source_parts.append("\n\n".join(doc_record["key_chunks"][:6]))
+            elif doc_record.get("summary"):
+                source_parts.append(doc_record["summary"])
 
-    if chunks:
-        source_text = "\n\n".join(c.get("text", "") for c in chunks)
-    elif doc_record and doc_record.get("sample_text"):
-        source_text = doc_record["sample_text"]
-    elif doc_record and doc_record.get("key_chunks"):
-        source_text = "\n\n".join(doc_record["key_chunks"])
+    if source_parts:
+        source_text = "\n\n---\n\n".join(source_parts)
     else:
-        source_text = (doc_record or {}).get("summary", "General course overview.")
+        source_text = custom_prompt or "General study material."
+
+    if custom_prompt:
+        source_text = f"FOCUS TOPIC: {custom_prompt}\n\nSOURCE CONTEXT:\n{source_text}"
 
     _safe_update_state(task_self, "PROGRESS", {"step": "graph_execution", "progress": 60})
 
-    # Run LangGraph Flashcard / Quiz graph
-    initial_state = {
-        "raw_text": source_text,
-        "document_id": document_id,
-        "mode": mode,
-        "prompt": "",
-        "llm_output": "",
-        "parsed_output": None,
-        "error_message": None,
-        "retry_count": 0,
-        "is_valid": False,
-    }
+    cards: List[Dict[str, Any]] = []
+    quizzes: List[Dict[str, Any]] = []
 
-    final_state = generator_graph.invoke(initial_state)
+    # 1. Generate flashcards if requested
+    if mode in ("both", "flashcards"):
+        fc_state = generator_graph.invoke({
+            "raw_text": source_text,
+            "document_id": target_doc_ids[0] if target_doc_ids else "custom",
+            "mode": "flashcards",
+            "prompt": "",
+            "llm_output": "",
+            "parsed_output": None,
+            "error_message": None,
+            "retry_count": 0,
+            "is_valid": False,
+        })
+        cards_raw = (fc_state.get("parsed_output") or {}).get("cards", [])
+        for c in cards_raw:
+            cards.append({
+                "id": c.get("id") or f"fc_{uuid.uuid4().hex[:8]}",
+                "front": c.get("front", ""),
+                "back": c.get("back", ""),
+                "mastery": 0,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
 
-    deck_id = f"deck_{uuid.uuid4().hex[:12]}"
-    filename = (doc_record or {}).get("filename", f"Notes_{document_id[:8]}")
-    title = filename.rsplit(".", 1)[0]
-    parsed_out = final_state.get("parsed_output") or {}
+    # 2. Generate quiz questions if requested
+    if mode in ("both", "quiz"):
+        qz_state = generator_graph.invoke({
+            "raw_text": source_text,
+            "document_id": target_doc_ids[0] if target_doc_ids else "custom",
+            "mode": "quiz",
+            "prompt": "",
+            "llm_output": "",
+            "parsed_output": None,
+            "error_message": None,
+            "retry_count": 0,
+            "is_valid": False,
+        })
+        quizzes_raw = (qz_state.get("parsed_output") or {}).get("questions", [])
+        for q in quizzes_raw:
+            quizzes.append({
+                "id": q.get("id") or f"qz_{uuid.uuid4().hex[:8]}",
+                "question": q.get("question", ""),
+                "options": q.get("options", []),
+                "answer": q.get("answer", 0),
+                "explanation": q.get("explanation", ""),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
 
-    if mode == "flashcards":
-        items = parsed_out.get("cards", [])
-    else:
-        items = parsed_out.get("questions", [])
+    # 3. Save into existing deck or create a new unified deck
+    if deck_id:
+        existing = mongo_manager.get_deck(deck_id, user_id)
+        if existing:
+            existing_fc = existing.get("flashcards", [])
+            existing_qz = existing.get("quizzes", [])
+            existing_fc.extend(cards)
+            existing_qz.extend(quizzes)
+            existing["flashcards"] = existing_fc
+            existing["quizzes"] = existing_qz
+            existing["cards_count"] = len(existing_fc)
+            existing["quizzes_count"] = len(existing_qz)
 
-    deck_doc = {
-        "deck_id": deck_id,
-        "title": f"{title} ({mode.capitalize()})",
-        "document_id": document_id,
-        "user_id": user_id,
-        "mode": mode,
-        "cards_count": len(items),
-        "mastery": 0,
-        "items": items,
-        "hue": "bg-primary",
-    }
+            # Ensure attached document_ids are recorded
+            current_doc_ids = list(existing.get("document_ids", []))
+            for did in target_doc_ids:
+                if did not in current_doc_ids:
+                    current_doc_ids.append(did)
+            existing["document_ids"] = current_doc_ids
+            if current_doc_ids:
+                existing["document_id"] = current_doc_ids[0]
 
-    mongo_manager.save_deck(deck_doc)
-    logger.info("Deck %s created with %d items.", deck_id, len(items))
+            if folder_id:
+                existing["folder_id"] = folder_id
+            mongo_manager.save_deck(existing)
+            target_deck_id = deck_id
+            deck_title = existing.get("title", "Study Material")
+        else:
+            deck_id = None
 
-    task_id = getattr(getattr(task_self, "request", None), "id", f"deck_task_{deck_id}")
+    if not deck_id:
+        target_deck_id = f"deck_{uuid.uuid4().hex[:12]}"
+        first_doc = None
+        if target_doc_ids:
+            first_doc = mongo_manager.get_document(target_doc_ids[0], user_id)
+        filename = (first_doc or {}).get("filename", f"Notes_{target_deck_id[:8]}")
+        deck_title = title or filename.rsplit(".", 1)[0]
+        deck_doc = {
+            "deck_id": target_deck_id,
+            "title": deck_title,
+            "document_id": target_doc_ids[0] if target_doc_ids else None,
+            "document_ids": target_doc_ids,
+            "user_id": user_id,
+            "folder_id": folder_id,
+            "flashcards": cards,
+            "quizzes": quizzes,
+            "cards_count": len(cards),
+            "quizzes_count": len(quizzes),
+            "mastery": 0,
+            "color": "indigo",
+            "hue": "bg-primary",
+        }
+        mongo_manager.save_deck(deck_doc)
+
+    logger.info("Deck %s updated/created with %d cards and %d quizzes.", target_deck_id, len(cards), len(quizzes))
+
+    task_id = getattr(getattr(task_self, "request", None), "id", f"deck_task_{target_deck_id}")
     return {
         "task_id": task_id,
-        "deck_id": deck_id,
-        "document_id": document_id,
+        "deck_id": target_deck_id,
+        "document_id": target_doc_ids[0] if target_doc_ids else "custom",
+        "document_ids": target_doc_ids,
         "mode": mode,
         "status": "ready",
-        "cards_count": len(items),
+        "cards_count": len(cards),
+        "quizzes_count": len(quizzes),
     }
 
 
@@ -284,15 +373,30 @@ def ingest_pdf_task(
 @celery_app.task(bind=True, name="mneme.generate_deck")
 def generate_deck_task(
     self: Any,
-    document_id: str,
-    user_id: str,
-    mode: str = "flashcards",
+    document_id: Optional[str] = None,
+    user_id: str = "user_default",
+    mode: str = "both",
+    deck_id: Optional[str] = None,
+    folder_id: Optional[str] = None,
+    title: Optional[str] = None,
+    custom_prompt: Optional[str] = None,
+    document_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Background task to run LangGraph generator graph and save resulting deck."""
-    req_id = getattr(getattr(self, "request", None), "id", document_id)
+    """Background task to run LangGraph generator graph and save resulting unified deck."""
+    req_id = getattr(getattr(self, "request", None), "id", document_id or deck_id)
     logger.info("Starting deck generation task %s (Mode: %s, Doc: %s)...", req_id, mode, document_id)
     try:
-        return execute_generate_deck(document_id, user_id, mode=mode, task_self=self)
+        return execute_generate_deck(
+            document_id=document_id,
+            user_id=user_id,
+            mode=mode,
+            deck_id=deck_id,
+            folder_id=folder_id,
+            title=title,
+            custom_prompt=custom_prompt,
+            document_ids=document_ids,
+            task_self=self,
+        )
     except Exception as exc:
         logger.error("Deck generation task failed: %s", exc, exc_info=True)
         _safe_update_state(self, "FAILURE", {"error": str(exc)})
