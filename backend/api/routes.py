@@ -307,17 +307,18 @@ def get_task_status(task_id: str) -> Response:
 
 @api_bp.route("/blurt/evaluate", methods=["POST"])
 def evaluate_blurt() -> Response:
-    """Synchronously evaluate student blurt text against document ground truth.
+    """Synchronously evaluate student blurt text against study deck and document ground truth.
 
     JSON payload:
-        { "document_id": "...", "blurt_text": "..." }
+        { "deck_id": "...", "document_id": "...", "blurt_text": "..." }
 
     Returns:
-        JSON with 'recalled_concepts' and 'missed_concepts'.
+        JSON with 'recalled_concepts', 'missed_concepts', 'score', and 'feedback'.
     """
     user_id = _get_request_user_id()
     data = request.get_json(silent=True) or {}
 
+    deck_id = data.get("deck_id")
     document_id = data.get("document_id")
     blurt_text = data.get("blurt_text", "").strip()
 
@@ -327,12 +328,15 @@ def evaluate_blurt() -> Response:
     try:
         initial_state = {
             "user_id": user_id,
+            "deck_id": deck_id,
             "document_id": document_id or "default",
             "blurt_text": blurt_text,
             "blurt_embedding": None,
             "retrieved_chunks": [],
             "recalled_concepts": [],
             "missed_concepts": [],
+            "score": 0,
+            "feedback": "",
             "raw_llm_output": None,
         }
 
@@ -373,6 +377,7 @@ def chat_stream() -> Response:
 
     session_id = data.get("session_id", str(uuid.uuid4()))
     user_message = data.get("message", "").strip()
+    deck_id = data.get("deck_id")
     document_id = data.get("document_id")
 
     if not user_message:
@@ -389,6 +394,7 @@ def chat_stream() -> Response:
                 "intent_type": "",
                 "ai_response": "",
                 "user_id": user_id,
+                "deck_id": deck_id,
                 "document_id": document_id,
                 "session_id": session_id,
             }

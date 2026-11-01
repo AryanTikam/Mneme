@@ -1,19 +1,29 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { BookOpen, Database, Send, Sparkles, X } from "lucide-react";
+import { Database, Layers, Send, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useChatStream, useDocuments } from "@/services/mneme";
+import { useChatStream, useDecks } from "@/services/mneme";
 
 export function ChatDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { messages, simplicity, send } = useChatStream();
-  const { documents, activeDocId, setActiveDocId } = useDocuments();
+  const { decks, activeDeckId } = useDecks();
+  const [selectedDeckId, setSelectedDeckId] = useState<string>("all");
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    if (activeDeckId && selectedDeckId === "all") {
+      setSelectedDeckId(activeDeckId);
+    }
+  }, [activeDeckId]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    send(input.trim(), activeDocId);
+    send(input.trim(), selectedDeckId);
     setInput("");
   };
   const tone = simplicity > 66 ? "bg-success" : simplicity > 40 ? "bg-primary" : "bg-destructive";
@@ -37,18 +47,18 @@ export function ChatDrawer({ open, onOpenChange }: { open: boolean; onOpenChange
                 <button onClick={() => onOpenChange(false)} aria-label="Close" className="rounded-full p-2 text-muted-foreground hover:bg-muted"><X className="h-5 w-5" /></button>
               </div>
 
-              {/* Document / Material Context Selector */}
+              {/* Study Deck Context Selector */}
               <div className="mt-3 flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-primary shrink-0" />
+                <Layers className="h-4 w-4 text-primary shrink-0" />
                 <select
-                  value={activeDocId || "all"}
-                  onChange={(e) => setActiveDocId(e.target.value === "all" ? "" : e.target.value)}
+                  value={selectedDeckId}
+                  onChange={(e) => setSelectedDeckId(e.target.value)}
                   className="w-full text-xs bg-muted/80 border border-border/60 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary truncate font-medium"
                 >
-                  <option value="all">All Uploaded Materials</option>
-                  {documents.map((doc) => (
-                    <option key={doc.document_id} value={doc.document_id}>
-                      {doc.filename}
+                  <option value="all">All Decks & Knowledge Base</option>
+                  {decks.map((deck) => (
+                    <option key={deck.id} value={deck.id}>
+                      {deck.title} ({deck.flashcards?.length || 0} cards)
                     </option>
                   ))}
                 </select>

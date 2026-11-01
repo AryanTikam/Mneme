@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Literal
 from langgraph.graph import END, StateGraph
 from pydantic import ValidationError
 
+from services.database import mongo_manager
 from services.embedding_service import embedding_service
 from services.llm_service import get_llm_service
 from services.qdrant_service import qdrant_service
@@ -37,29 +38,66 @@ def _extract_json_block(text: str) -> str:
 
 
 def retrieve_context_node(state: ChatState) -> Dict[str, Any]:
-    """Retrieve relevant ground-truth document chunks from Qdrant with tenant isolation."""
+    """Retrieve relevant ground-truth document chunks and deck knowledge from Qdrant with tenant isolation."""
     user_message = state.get("user_message", "").strip()
     user_id = state.get("user_id")
+    deck_id = state.get("deck_id")
     document_id = state.get("document_id")
 
     if not user_id:
         raise ValueError("Tenant violation: user_id is missing from ChatState.")
 
-    logger.info("Retrieving context for user '%s' in chat session...", user_id)
+    logger.info("Retrieving context for user '%s' in chat session (deck_id=%s, doc_id=%s)...", user_id, deck_id, document_id)
     query_vector = embedding_service.embed_text(user_message)
+
+    auxiliary_deck_chunks: List[Dict[str, Any]] = []
+    doc_ids: List[str] = []
+    deck_title = None
+
+    if deck_id and deck_id not in ("all", "default", ""):
+        deck = mongo_manager.get_deck(deck_id, user_id)
+        if deck:
+            deck_title = deck.get("title")
+            doc_ids = list(deck.get("document_ids") or [])
+            if deck.get("document_id") and deck.get("document_id") not in doc_ids:
+                doc_ids.append(deck.get("document_id"))
+
+            # Include deck flashcards
+            cards = deck.get("flashcards") or []
+            if cards:
+                cards_text = f"Deck '{deck_title}' Flashcards Summary:\n" + "\n".join(
+                    f"- {c.get('front')} => {c.get('back')}" for c in cards[:12]
+                )
+                auxiliary_deck_chunks.append({"text": cards_text})
+
+            # Include deck quizzes
+            quizzes = deck.get("quizzes") or []
+            if quizzes:
+                quizzes_text = f"Deck '{deck_title}' Quiz Summary:\n" + "\n".join(
+                    f"- {q.get('question')} (Key: {q.get('options', [''])[q.get('answer', 0)] if q.get('options') else ''})"
+                    for q in quizzes[:6]
+                )
+                auxiliary_deck_chunks.append({"text": quizzes_text})
+    elif document_id and document_id not in ("default", "all", ""):
+        doc_ids = [document_id]
+
     chunks = qdrant_service.search_chunks(
         user_id=user_id,
         query_vector=query_vector,
         top_k=4,
-        document_id=document_id,
+        document_id=document_id if not doc_ids else None,
+        document_ids=doc_ids if doc_ids else None,
     )
 
-    if chunks:
-        formatted_context = "\n\n".join(
-            f"[Source Note {i+1}]: {c.get('text', '')}" for i, c in enumerate(chunks)
+    all_chunks = chunks + auxiliary_deck_chunks
+
+    if all_chunks:
+        header = f"Active Study Deck: \"{deck_title}\"\n\n" if deck_title else ""
+        formatted_context = header + "\n\n".join(
+            f"[Source Note {i+1}]: {c.get('text', '')}" for i, c in enumerate(all_chunks)
         )
     else:
-        formatted_context = "No specific study notes found for this query."
+        formatted_context = f"No specific study notes or cards found for this query in deck '{deck_title or 'All'}'. Auditing using core scientific principles."
 
     return {"retrieved_context": formatted_context}
 

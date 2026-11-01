@@ -324,35 +324,42 @@ class FlashcardDeckModel(BaseModel):
     \item \textbf{FormatErrorNode:} If validation raises a `ValidationError`, the error message is fed back into the prompt context, and the node re-executes with adjusted temperature, guaranteeing zero runtime JSON parse failures.
 \end{enumerate}
 
-\section{Segregated Context Architecture}
-Earlier generation systems coupled uploaded documents strictly to an individual deck, forcing duplicate uploads if a user wished to study the same lecture note across multiple decks. Mneme implements a segregated context architecture:
+\section{Segregated Deck-Centric Context Architecture}
+Earlier generation prototypes coupled uploaded documents strictly to isolated files or global scopes, forcing duplicate uploads or confusing cross-topic retrieval. Mneme establishes the **Study Deck** as the fundamental cognitive organizing unit:
 \begin{itemize}
     \item Uploaded files exist as sovereign document entities in a centralized Document Library.
-    \item Each unified deck maintains an array of `document_ids`.
+    \item Each unified deck maintains an array of bound `document_ids` alongside its flashcards and quizzes.
     \item Users can attach or detach any combination of documents to any deck at will.
-    \item When generating flashcards or quizzes within a deck, the system queries Qdrant restricting context retrieval exclusively to the IDs currently attached to that specific deck.
+    \item When performing active recall drills (Flashcards, Quizzes, Blurt audits, or Feynman mentoring), the system resolves context strictly through the active deck:
+    \begin{enumerate}
+        \item It identifies all document IDs attached to that specific deck and queries Qdrant using vector similarity filtered by `document_ids`.
+        \item It extracts key concepts from the deck's own flashcards and quizzes as auxiliary grounding, ensuring that decks created manually or without PDFs are equally supported.
+    \end{enumerate}
     \item Permanent deletion of a context from the library decouples it from all associated decks and executes an idempotent point purge in Qdrant matching `document_id`.
 \end{itemize}
 
-\section{Blurt Mode Evaluation Workflow}
-The Blurt Mode workflow operates through an isolated LangGraph graph:
+\section{Blurt Mode Evaluation Workflow and Timed Arena}
+The Blurt Mode arena provides a structured active-recall testing environment:
 \begin{enumerate}
-    \item \textbf{EmbedUserBlurtNode:} The student's unassisted memory dump is vectorized.
-    \item \textbf{QueryQdrantNode:} Dense vector similarity search retrieves the top five most relevant ground truth chunks from the attached document.
-    \item \textbf{CompareLLMNode:} Qwen 27B conducts a semantic comparison between the ground truth chunks and the student blurt.
+    \item \textbf{Pre-Session Configuration Screen:} Rather than thrusting the learner into an immediate countdown, Blurt Mode opens with a dedicated setup interface. The learner selects their target study deck (with card counts and context badges) and chooses a timer duration (1 minute quick sprint, 3 minutes focused recall, 5 minutes standard, or 10 minutes deep dive).
+    \item \textbf{Active Recall Typing Phase:} Upon session start, the countdown timer initiates with an animated progress bar. The student types everything remembered from the selected deck.
+    \item \textbf{Automated Expiration and Audit Trigger:} The timer serves as a functional consequence barrier. When the countdown reaches zero, the interface alerts the user and automatically dispatches non-empty submissions for neural auditing. Learners may also submit early at any point.
+    \item \textbf{Deck-Grounded Vector Retrieval:} `EmbedUserBlurtNode` vectors the blurt submission, and `QueryQdrantNode` retrieves top ground-truth chunks from all documents attached to that deck, augmented by the deck's flashcards.
+    \item \textbf{Semantic Difference Extraction:} Qwen 27B conducts a semantic comparison between the ground truth and the student blurt.
     \item \textbf{Diagnostic Categorization:} The model outputs:
     \begin{itemize}
         \item `recalled_concepts`: Key concepts and principles accurately explained by the student.
-        \item `missed_concepts`: Fundamental principles present in the notes that were omitted or misstated.
+        \item `missed_concepts`: High-yield principles present in the deck's notes that were omitted or misstated.
         \item `score`: An objective percentage metric of conceptual coverage.
-        \item `feedback`: Targeted pedagogical feedback detailing what was understood well and what must be reviewed.
+        \item `feedback`: Targeted pedagogical coaching detailing what was understood well and what must be reviewed.
     \end{itemize}
 \end{enumerate}
 
 \section{Socratic and Feynman Tutor Chat Workflow}
-The Feynman Tutor provides an interactive conversational drawer accessible across the entire application. When a student enters a message, the workflow executes in real time:
+The Feynman Tutor provides an interactive conversational drawer accessible across the entire application, grounded directly in the user's selected study deck:
 \begin{enumerate}
-    \item \textbf{Context Retrieval:} High-dimensional vector search retrieves the top four document chunks matching the user's message.
+    \item \textbf{Deck Context Selection:} The student selects their active study deck directly within the tutor header, or selects all decks for broad cross-topic synthesis.
+    \item \textbf{Context Retrieval:} High-dimensional vector search retrieves the top document chunks matching the user's message across the documents bound to that deck, augmented by the deck's flashcard concepts.
     \item \textbf{IntentRouterNode:} A lightweight model call determines user intent:
     \begin{itemize}
         \item If the user is asking a question (`ask`), the graph routes to `SocraticAnswerNode`. The tutor answers using source notes and finishes with a reflective question prompting deeper analysis.

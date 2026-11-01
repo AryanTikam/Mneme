@@ -153,9 +153,11 @@ class QdrantService:
         query_vector: List[float],
         top_k: int = 4,
         document_id: Optional[str] = None,
+        document_ids: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Perform vector similarity search strictly bounded by user_id.
 
+        If document_ids is supplied, restricts search to that set of documents.
         If document_id is supplied, it further restricts search to that document.
         """
         if not user_id:
@@ -168,8 +170,17 @@ class QdrantService:
                 match=models.MatchValue(value=user_id),
             )
         ]
+        clean_doc_ids = [d for d in (document_ids or []) if d and d not in ("default", "all", "")]
         has_specific_doc = bool(document_id and document_id not in ("default", "all", ""))
-        if has_specific_doc:
+
+        if clean_doc_ids:
+            must_conditions.append(
+                models.FieldCondition(
+                    key="document_id",
+                    match=models.MatchAny(any=clean_doc_ids),
+                )
+            )
+        elif has_specific_doc:
             must_conditions.append(
                 models.FieldCondition(
                     key="document_id",
@@ -215,7 +226,10 @@ class QdrantService:
         filtered_points = [
             pt for pt in self._mock_points.values()
             if pt["payload"].get("user_id") == user_id
-            and (not has_specific_doc or pt["payload"].get("document_id") == document_id)
+            and (
+                (clean_doc_ids and pt["payload"].get("document_id") in clean_doc_ids)
+                or (not clean_doc_ids and (not has_specific_doc or pt["payload"].get("document_id") == document_id))
+            )
         ]
 
         def cosine_similarity(v1: List[float], v2: List[float]) -> float:

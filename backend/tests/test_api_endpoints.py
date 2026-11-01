@@ -114,11 +114,12 @@ def test_task_status_polling_endpoint():
 
 
 def test_blurt_evaluate_endpoint():
-    """Verify POST /api/v1/blurt/evaluate runs synchronous evaluation."""
+    """Verify POST /api/v1/blurt/evaluate runs synchronous evaluation using deck context."""
     app = create_app()
     client = app.test_client()
 
     payload = {
+        "deck_id": "deck_test_cs101",
         "document_id": "doc_test_course",
         "blurt_text": "Operating systems manage hardware resources, process scheduling, and virtual memory isolation.",
     }
@@ -134,17 +135,20 @@ def test_blurt_evaluate_endpoint():
     data = res.get_json()
     assert "recalled_concepts" in data
     assert "missed_concepts" in data
+    assert "score" in data
+    assert "feedback" in data
     assert isinstance(data["recalled_concepts"], list)
 
 
 def test_chat_stream_endpoint():
-    """Verify POST /api/v1/chat/stream returns SSE stream."""
+    """Verify POST /api/v1/chat/stream returns SSE stream with deck context."""
     app = create_app()
     client = app.test_client()
 
     payload = {
         "session_id": "sess_stream_1",
         "message": "Can you explain how virtual memory page tables work?",
+        "deck_id": "deck_test_cs101",
         "document_id": "doc_test_course",
     }
 

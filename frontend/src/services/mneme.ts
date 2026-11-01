@@ -1325,18 +1325,20 @@ export type AuditResult = {
 export function useBlurtAudit() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AuditResult | null>(null);
-  const { documents, activeDocId, setActiveDocId } = useDocuments();
 
   const audit = useCallback(
-    async (text: string, documentId?: string) => {
+    async (text: string, deckId?: string, documentId?: string) => {
       setLoading(true);
-      const targetDoc = documentId || activeDocId || "default";
 
       try {
         const res = await apiFetch("/api/v1/blurt/evaluate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ document_id: targetDoc, blurt_text: text }),
+          body: JSON.stringify({
+            deck_id: deckId && deckId !== "all" ? deckId : undefined,
+            document_id: documentId && documentId !== "all" ? documentId : undefined,
+            blurt_text: text,
+          }),
         });
 
         if (res.ok) {
@@ -1369,7 +1371,7 @@ export function useBlurtAudit() {
         setLoading(false);
       }
     },
-    [activeDocId]
+    []
   );
 
   const reset = useCallback(() => {
@@ -1381,9 +1383,6 @@ export function useBlurtAudit() {
     result,
     audit,
     reset,
-    documents,
-    activeDocId,
-    setActiveDocId,
   };
 }
 
@@ -1424,12 +1423,9 @@ export function useChatStream() {
   ]);
   const [simplicity, setSimplicity] = useState(75);
   const sessionId = useRef(crypto.randomUUID());
-  const { activeDocId } = useDocuments();
 
   const send = useCallback(
-    async (message: string, documentId?: string) => {
-      const targetDoc = documentId || activeDocId || "default";
-
+    async (message: string, deckId?: string, documentId?: string) => {
       // Compute deterministic linguistic clarity via Flesch Reading Ease
       setSimplicity(computeFleschSimplicity(message));
 
@@ -1447,7 +1443,8 @@ export function useChatStream() {
           body: JSON.stringify({
             session_id: sessionId.current,
             message,
-            document_id: targetDoc,
+            deck_id: deckId && deckId !== "all" ? deckId : undefined,
+            document_id: documentId && documentId !== "all" ? documentId : undefined,
           }),
         });
 

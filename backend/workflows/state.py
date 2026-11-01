@@ -81,7 +81,8 @@ class GeneratorState(TypedDict):
 class BlurtState(TypedDict):
     """State for Blurt Mode semantic difference graph."""
     user_id: str
-    document_id: str
+    document_id: Optional[str]
+    deck_id: Optional[str]
     blurt_text: str
     blurt_embedding: Optional[List[float]]
     retrieved_chunks: List[Dict[str, Any]]
@@ -101,5 +102,6 @@ class ChatState(TypedDict):
     ai_response: str
     user_id: str
     document_id: Optional[str]
+    deck_id: Optional[str]
     session_id: Optional[str]
 

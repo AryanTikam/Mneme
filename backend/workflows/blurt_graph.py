@@ -15,6 +15,7 @@ from typing import Any, Dict, List
 from langgraph.graph import END, StateGraph
 from pydantic import ValidationError
 
+from services.database import mongo_manager
 from services.embedding_service import embedding_service
 from services.llm_service import get_llm_service
 from services.qdrant_service import qdrant_service
@@ -44,23 +45,59 @@ def embed_user_blurt_node(state: BlurtState) -> Dict[str, Any]:
 
 
 def query_qdrant_node(state: BlurtState) -> Dict[str, Any]:
-    """Retrieve top-k ground truth chunks from Qdrant with mandatory user_id filtering."""
+    """Retrieve ground truth chunks bounded by user_id and deck/document contexts."""
     user_id = state.get("user_id")
+    deck_id = state.get("deck_id")
     document_id = state.get("document_id")
     emb = state.get("blurt_embedding") or []
 
     if not user_id:
         raise ValueError("Tenant violation: user_id is missing from BlurtState.")
 
-    logger.info("Querying Qdrant for user '%s' and document '%s'...", user_id, document_id)
+    retrieved_chunks = []
+    auxiliary_deck_chunks = []
+    doc_ids: List[str] = []
+
+    if deck_id and deck_id not in ("all", "default", ""):
+        deck = mongo_manager.get_deck(deck_id, user_id)
+        if deck:
+            logger.info("Resolving contexts and knowledge for deck '%s' (%s)...", deck.get("title"), deck_id)
+            doc_ids = list(deck.get("document_ids") or [])
+            if deck.get("document_id") and deck.get("document_id") not in doc_ids:
+                doc_ids.append(deck.get("document_id"))
+
+            # Extract deck flashcard content
+            cards = deck.get("flashcards") or []
+            if cards:
+                card_summary = f"Deck '{deck.get('title')}' Flashcards Content:\n" + "\n".join(
+                    f"- Question: {c.get('front')} | Answer: {c.get('back')}" for c in cards[:15]
+                )
+                auxiliary_deck_chunks.append({"text": card_summary, "source": "deck_cards"})
+
+            # Extract deck quiz content
+            quizzes = deck.get("quizzes") or []
+            if quizzes:
+                quiz_summary = f"Deck '{deck.get('title')}' Quiz Content:\n" + "\n".join(
+                    f"- {q.get('question')} | Key: {q.get('options', [''])[q.get('answer', 0)] if q.get('options') else ''} ({q.get('explanation', '')})"
+                    for q in quizzes[:8]
+                )
+                auxiliary_deck_chunks.append({"text": quiz_summary, "source": "deck_quizzes"})
+    elif document_id and document_id not in ("default", "all", ""):
+        doc_ids = [document_id]
+
+    logger.info("Querying Qdrant for user '%s', doc_ids=%s, deck_id=%s...", user_id, doc_ids, deck_id)
     chunks = qdrant_service.search_chunks(
         user_id=user_id,
         query_vector=emb,
         top_k=5,
-        document_id=document_id,
+        document_id=document_id if not doc_ids else None,
+        document_ids=doc_ids if doc_ids else None,
     )
-    logger.info("Retrieved %d relevant ground-truth chunks.", len(chunks))
-    return {"retrieved_chunks": chunks}
+    retrieved_chunks.extend(chunks)
+    retrieved_chunks.extend(auxiliary_deck_chunks)
+
+    logger.info("Assembled %d total ground-truth chunks for blurt audit.", len(retrieved_chunks))
+    return {"retrieved_chunks": retrieved_chunks}
 
 
 def compare_llm_node(state: BlurtState) -> Dict[str, Any]:
