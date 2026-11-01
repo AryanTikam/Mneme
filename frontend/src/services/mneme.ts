@@ -253,6 +253,92 @@ export function useAuth() {
 }
 
 // -------------------------------------------------------------
+// USER STATS & COGNITIVE METRICS HOOK
+// -------------------------------------------------------------
+export interface UserStats {
+  streak_days: number;
+  mastery_percentage: number;
+  total_decks: number;
+  total_cards: number;
+  total_quizzes: number;
+  mastered_cards: number;
+  total_documents: number;
+  active_recall_label: string;
+}
+
+export const STATS_CHANGED_EVENT = "mneme:stats_changed";
+export function notifyStatsChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(STATS_CHANGED_EVENT));
+  }
+}
+
+export function useUserStats() {
+  const [stats, setStats] = useState<UserStats>({
+    streak_days: 1,
+    mastery_percentage: 0,
+    total_decks: 0,
+    total_cards: 0,
+    total_quizzes: 0,
+    mastered_cards: 0,
+    total_documents: 0,
+    active_recall_label: "Active recall mastery active",
+  });
+  const [loading, setLoading] = useState(false);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/v1/users/stats");
+      if (res.ok) {
+        const data = await res.json();
+        setStats({
+          streak_days: data.streak_days ?? 1,
+          mastery_percentage: data.mastery_percentage ?? 0,
+          total_decks: data.total_decks ?? 0,
+          total_cards: data.total_cards ?? 0,
+          total_quizzes: data.total_quizzes ?? 0,
+          mastered_cards: data.mastered_cards ?? 0,
+          total_documents: data.total_documents ?? 0,
+          active_recall_label: data.active_recall_label || "Active recall mastery active",
+        });
+      }
+    } catch (e) {
+      console.error("Failed to fetch user stats:", e);
+    }
+  }, []);
+
+  const recordActivity = useCallback(async (action: string = "review", metadata?: Record<string, any>) => {
+    try {
+      await apiFetch("/api/v1/users/activity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, metadata }),
+      });
+      notifyStatsChanged();
+    } catch (e) {
+      console.error("Failed to record activity:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+    const handleStats = () => fetchStats();
+    const handleDecks = () => fetchStats();
+    const handleUser = () => fetchStats();
+    window.addEventListener(STATS_CHANGED_EVENT, handleStats);
+    window.addEventListener(DECKS_CHANGED_EVENT, handleDecks);
+    window.addEventListener(USER_EVENT_NAME, handleUser);
+    return () => {
+      window.removeEventListener(STATS_CHANGED_EVENT, handleStats);
+      window.removeEventListener(DECKS_CHANGED_EVENT, handleDecks);
+      window.removeEventListener(USER_EVENT_NAME, handleUser);
+    };
+  }, [fetchStats]);
+
+  return { stats, loading, refreshStats: fetchStats, recordActivity };
+}
+
+// -------------------------------------------------------------
 // FOLDERS HOOK
 // -------------------------------------------------------------
 export function useFolders() {
@@ -916,15 +1002,37 @@ export function useDeckContexts(deckId: string | null) {
           notifyDecksChanged();
           notifyDocsChanged();
           return data;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Upload failed with server status ${res.status}`);
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("Failed to upload context to deck:", e);
+        throw e;
       } finally {
         setLoading(false);
       }
       return null;
     },
     [deckId, refreshContexts]
+  );
+
+  const deleteDocPermanently = useCallback(
+    async (documentId: string) => {
+      try {
+        const res = await apiFetch(`/api/v1/documents/${documentId}`, { method: "DELETE" });
+        if (res.ok) {
+          await refreshContexts();
+          notifyDecksChanged();
+          notifyDocsChanged();
+          return true;
+        }
+      } catch (e) {
+        console.error("Failed to delete document permanently:", e);
+      }
+      return false;
+    },
+    [refreshContexts]
   );
 
   useEffect(() => {
@@ -942,6 +1050,7 @@ export function useDeckContexts(deckId: string | null) {
     refreshContexts,
     attachDoc,
     detachDoc,
+    deleteDocPermanently,
     uploadDocToDeck,
   };
 }
@@ -1042,6 +1151,32 @@ export function useStudyDeck(_targetMode?: "flashcards" | "quiz") {
   const flashcards: Flashcard[] = activeDeck?.flashcards || [];
   const mcqs: Mcq[] = activeDeck?.quizzes || [];
 
+  const recordCardReview = useCallback(
+    async (cardId: string, rating: "good" | "again") => {
+      if (!activeDeck) return;
+      try {
+        if (rating === "good") {
+          const card = activeDeck.flashcards?.find((c) => c.id === cardId);
+          const nextMastery = Math.min(5, (card?.mastery || 0) + 1);
+          await apiFetch(`/api/v1/decks/${activeDeck.id}/cards/${cardId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mastery: nextMastery }),
+          });
+        }
+        await apiFetch("/api/v1/users/activity", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "flashcard_review", metadata: { cardId, rating } }),
+        });
+        notifyStatsChanged();
+      } catch (e) {
+        console.error("Failed to record card review:", e);
+      }
+    },
+    [activeDeck]
+  );
+
   return {
     allDecks: decks,
     activeDeck,
@@ -1052,6 +1187,7 @@ export function useStudyDeck(_targetMode?: "flashcards" | "quiz") {
     loading,
     refresh,
     deleteDeck,
+    recordCardReview,
   };
 }
 
@@ -1064,6 +1200,7 @@ export function useUploadDocument() {
   const [stage, setStage] = useState<UploadStage>("idle");
   const [progress, setProgress] = useState(0);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [createdDeckId, setCreatedDeckId] = useState<string | null>(null);
 
   const upload = useCallback(async (file: File) => {
     setFileName(file.name);
@@ -1144,9 +1281,10 @@ export function useUploadDocument() {
 
         if (serverDecks.length > 0) {
           setStoredJson(LOCAL_DECKS_KEY, serverDecks);
-          const firstNew = serverDecks.find((d) => d.document_id === documentId) || serverDecks[0];
+          const firstNew = serverDecks.find((d) => d.document_id === documentId || (d.document_ids && d.document_ids.includes(documentId))) || serverDecks[0];
           if (firstNew) {
             setStoredJson(LOCAL_ACTIVE_DECK_KEY, firstNew.id);
+            setCreatedDeckId(firstNew.id);
           }
         }
       }
@@ -1168,15 +1306,21 @@ export function useUploadDocument() {
     setStage("idle");
     setProgress(0);
     setFileName(null);
+    setCreatedDeckId(null);
   };
 
-  return { stage, progress, fileName, upload, reset };
+  return { stage, progress, fileName, createdDeckId, upload, reset };
 }
 
 // -------------------------------------------------------------
 // BLURT AUDIT HOOK
 // -------------------------------------------------------------
-export type AuditResult = { recalled_concepts: string[]; missed_concepts: string[] };
+export type AuditResult = {
+  recalled_concepts: string[];
+  missed_concepts: string[];
+  score: number;
+  feedback: string;
+};
 
 export function useBlurtAudit() {
   const [loading, setLoading] = useState(false);
@@ -1200,14 +1344,27 @@ export function useBlurtAudit() {
           setResult({
             recalled_concepts: data.recalled_concepts || [],
             missed_concepts: data.missed_concepts || [],
+            score: data.score ?? (data.recalled_concepts?.length ? Math.round((data.recalled_concepts.length / (data.recalled_concepts.length + (data.missed_concepts?.length || 0))) * 100) : 0),
+            feedback: data.feedback || "",
           });
+          notifyStatsChanged();
         } else {
-          const words = text.split(/\s+/).filter((w) => w.length > 5);
-          setResult({ recalled_concepts: words.slice(0, 5), missed_concepts: [] });
+          const err = await res.json().catch(() => ({}));
+          setResult({
+            recalled_concepts: [],
+            missed_concepts: [],
+            score: 0,
+            feedback: err.error || "Failed to audit blurt against knowledge base.",
+          });
         }
-      } catch {
-        const words = text.split(/\s+/).filter((w) => w.length > 5);
-        setResult({ recalled_concepts: words.slice(0, 5), missed_concepts: [] });
+      } catch (err: any) {
+        console.error("Blurt evaluation failed:", err);
+        setResult({
+          recalled_concepts: [],
+          missed_concepts: [],
+          score: 0,
+          feedback: "Network error connecting to evaluation service.",
+        });
       } finally {
         setLoading(false);
       }
@@ -1231,9 +1388,31 @@ export function useBlurtAudit() {
 }
 
 // -------------------------------------------------------------
-// CHAT STREAM HOOK
+// CHAT STREAM & FEYNMAN SIMPLICITY
 // -------------------------------------------------------------
 export type ChatMsg = { id: string; role: "user" | "ai"; text: string; searching?: boolean };
+
+function countSyllables(word: string): number {
+  const w = word.toLowerCase().replace(/[^a-z]/g, "");
+  if (!w) return 0;
+  if (w.length <= 3) return 1;
+  const clean = w.replace(/(?:[^laeiouy]|ed|es|e)$/, "").replace(/^y/, "");
+  const matches = clean.match(/[aeiouy]{1,2}/g);
+  return matches ? Math.max(1, matches.length) : 1;
+}
+
+export function computeFleschSimplicity(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) return 75;
+  const sentences = Math.max(1, trimmed.split(/[.!?]+/).filter((s) => s.trim().length > 0).length);
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 75;
+  const totalSyllables = words.reduce((acc, w) => acc + countSyllables(w), 0);
+  
+  // Standard Flesch Reading Ease: 206.835 - 1.015 * (words/sentences) - 84.6 * (syllables/words)
+  const score = 206.835 - 1.015 * (words.length / sentences) - 84.6 * (totalSyllables / words.length);
+  return Math.round(Math.max(10, Math.min(100, score)));
+}
 
 export function useChatStream() {
   const [messages, setMessages] = useState<ChatMsg[]>([
@@ -1251,11 +1430,8 @@ export function useChatStream() {
     async (message: string, documentId?: string) => {
       const targetDoc = documentId || activeDocId || "default";
 
-      const words = message.split(/\s+/).filter(Boolean);
-      const longWords = words.filter((w) => w.length > 9).length;
-      setSimplicity(
-        Math.max(15, Math.min(98, 92 - longWords * 14 - Math.max(0, words.length - 35) + Math.random() * 6))
-      );
+      // Compute deterministic linguistic clarity via Flesch Reading Ease
+      setSimplicity(computeFleschSimplicity(message));
 
       const aiId = crypto.randomUUID();
       setMessages((m) => [

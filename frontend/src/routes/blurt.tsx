@@ -118,6 +118,26 @@ function BlurtPage() {
 
           {result && (
             <motion.div key="result" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+              {/* Score & Feedback Banner */}
+              <div className="rounded-[2rem] border border-border bg-card p-6 shadow-soft space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-primary uppercase tracking-wider">
+                    <Sparkles className="h-4 w-4" />
+                    <span>Cognitive Retention Evaluation</span>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-bold ${
+                    result.score >= 70 ? "bg-success/15 text-success" : result.score >= 40 ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive"
+                  }`}>
+                    {result.score}% Recall Score
+                  </span>
+                </div>
+                {result.feedback && (
+                  <p className="text-sm leading-relaxed text-foreground font-medium">
+                    {result.feedback}
+                  </p>
+                )}
+              </div>
+
               <div className="rounded-[2rem] bg-card p-8 shadow-soft">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="font-display text-lg font-bold">Your Recall</h2>
@@ -142,7 +162,7 @@ function BlurtPage() {
                       {c}
                     </motion.span>
                   ))}
-                  {!result.missed_concepts.length && <p className="text-sm">Nothing missed — outstanding retention!</p>}
+                  {!result.missed_concepts.length && <p className="text-sm">Nothing missed: outstanding retention!</p>}
                 </div>
 
                 <div className="mt-6 flex flex-wrap gap-3">

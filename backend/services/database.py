@@ -11,7 +11,7 @@ import logging
 import re
 import uuid
 from typing import Any, Dict, List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pymongo
 from pymongo import MongoClient
 from pymongo.database import Database
@@ -272,6 +272,102 @@ class MongoManager:
             return self._db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
         u = self._mock_storage.get("users", {}).get(user_id)
         return {k: v for k, v in u.items() if k != "password_hash"} if u else None
+
+    def record_user_activity(self, user_id: str, action: str = "review", metadata: Optional[Dict[str, Any]] = None) -> None:
+        """Record a user activity event and append today's date to their active days set."""
+        now = datetime.now(timezone.utc)
+        today_str = now.strftime("%Y-%m-%d")
+        now_iso = now.isoformat()
+
+        if self._is_connected and self._db is not None:
+            self._db.users.update_one(
+                {"user_id": user_id},
+                {
+                    "$set": {"last_active": now_iso},
+                    "$addToSet": {"activity_dates": today_str},
+                    "$inc": {"review_count": 1 if "review" in action else 0},
+                }
+            )
+        else:
+            u = self._mock_storage.get("users", {}).get(user_id)
+            if u:
+                u["last_active"] = now_iso
+                dates = set(u.setdefault("activity_dates", []))
+                dates.add(today_str)
+                u["activity_dates"] = sorted(list(dates))
+                u["review_count"] = u.get("review_count", 0) + (1 if "review" in action else 0)
+
+    def get_user_stats(self, user_id: str) -> Dict[str, Any]:
+        """Compute live per-user statistics: study streak, active recall mastery %, and resource counts."""
+        user = self.get_user(user_id) or {}
+        now = datetime.now(timezone.utc)
+        today = now.date()
+
+        # Calculate consecutive daily streak
+        activity_dates = set(user.get("activity_dates", []))
+        if user.get("last_active"):
+            try:
+                la_date = datetime.fromisoformat(user["last_active"]).date()
+                activity_dates.add(la_date.strftime("%Y-%m-%d"))
+            except Exception:
+                pass
+
+        streak = 0
+        curr = today
+        if curr.strftime("%Y-%m-%d") in activity_dates:
+            streak += 1
+            curr = curr - timedelta(days=1)
+        elif (curr - timedelta(days=1)).strftime("%Y-%m-%d") in activity_dates:
+            streak += 1
+            curr = curr - timedelta(days=2)
+        else:
+            if user.get("created_at"):
+                try:
+                    c_date = datetime.fromisoformat(user["created_at"]).date()
+                    if c_date == today:
+                        streak = 1
+                except Exception:
+                    pass
+
+        while streak > 0:
+            if curr.strftime("%Y-%m-%d") in activity_dates:
+                streak += 1
+                curr = curr - timedelta(days=1)
+            else:
+                break
+
+        # Compute flashcard & deck metrics
+        decks = self.list_decks(user_id)
+        total_decks = len(decks)
+        total_cards = sum(len(d.get("flashcards", [])) for d in decks)
+        total_quizzes = sum(len(d.get("quizzes", [])) for d in decks)
+        mastered_cards = sum(
+            sum(1 for c in d.get("flashcards", []) if c.get("mastery", 0) >= 1)
+            for d in decks
+        )
+        mastery_pct = round((mastered_cards / total_cards) * 100) if total_cards > 0 else 0
+        total_docs = len(self.list_documents(user_id))
+
+        if mastery_pct >= 80:
+            label = "Active recall mastery reached"
+        elif mastery_pct >= 40:
+            label = "Active recall mastery progressing"
+        elif total_cards > 0:
+            label = "Building foundational memory"
+        else:
+            label = "Active recall mastery active"
+
+        return {
+            "user_id": user_id,
+            "streak_days": max(1, streak) if (user.get("user_id") or activity_dates) else 0,
+            "mastery_percentage": mastery_pct,
+            "total_decks": total_decks,
+            "total_cards": total_cards,
+            "total_quizzes": total_quizzes,
+            "mastered_cards": mastered_cards,
+            "total_documents": total_docs,
+            "active_recall_label": label,
+        }
 
     # =========================================================================
     # Folder Management Operations

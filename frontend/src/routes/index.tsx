@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AppShell, PageHeader } from "@/components/mneme/AppShell";
+import { ContextLibraryModal } from "@/components/mneme/ContextLibraryModal";
 import { CreateDeckModal } from "@/components/mneme/CreateDeckModal";
 import { DeckModal } from "@/components/mneme/DeckModal";
 import { FolderModal } from "@/components/mneme/FolderModal";
@@ -50,7 +51,7 @@ const STAGES = [
 ] as const;
 
 function Dashboard() {
-  const { stage, progress, fileName, upload, reset } = useUploadDocument();
+  const { stage, progress, fileName, createdDeckId, upload, reset } = useUploadDocument();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -77,6 +78,7 @@ function Dashboard() {
   // Modals state
   const [managingDeckId, setManagingDeckId] = useState<string | null>(null);
   const [isCreatingDeck, setIsCreatingDeck] = useState(false);
+  const [isManagingContexts, setIsManagingContexts] = useState(false);
   const [folderToEdit, setFolderToEdit] = useState<Folder | null | "new">(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -198,17 +200,24 @@ function Dashboard() {
             {stage === "done" && (
               <div className="mt-5 flex gap-2">
                 <button
-                  onClick={() => {
-                    refresh();
+                  onClick={async () => {
+                    await refresh();
+                    if (createdDeckId) {
+                      setManagingDeckId(createdDeckId);
+                      setActiveDeckId(createdDeckId);
+                    } else if (decks.length > 0) {
+                      setManagingDeckId(decks[0].id);
+                      setActiveDeckId(decks[0].id);
+                    }
                     reset();
                   }}
-                  className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
+                  className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 shadow-sm transition"
                 >
                   View Generated Deck
                 </button>
                 <button
                   onClick={reset}
-                  className="rounded-full bg-secondary px-4 py-2 text-xs font-semibold text-secondary-foreground hover:bg-muted"
+                  className="rounded-full bg-secondary px-4 py-2 text-xs font-semibold text-secondary-foreground hover:bg-muted transition"
                 >
                   Upload Another
                 </button>
@@ -248,6 +257,15 @@ function Dashboard() {
                 <option value="quizzes">Most Quizzes</option>
               </select>
             </div>
+
+            {/* Context Library */}
+            <button
+              onClick={() => setIsManagingContexts(true)}
+              className="flex items-center gap-1.5 rounded-2xl border border-border bg-card px-3.5 py-1.5 text-xs font-semibold text-foreground shadow-soft transition hover:bg-muted"
+              title="Manage study documents and segregated contexts"
+            >
+              <FileText className="h-3.5 w-3.5 text-primary" /> Context Library
+            </button>
 
             {/* Create Blank Deck */}
             <button
@@ -492,6 +510,13 @@ function Dashboard() {
             refreshFolders();
             refresh();
           }}
+        />
+      )}
+
+      {isManagingContexts && (
+        <ContextLibraryModal
+          open={isManagingContexts}
+          onClose={() => setIsManagingContexts(false)}
         />
       )}
     </AppShell>

@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import uuid
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Generator
 from pathlib import Path
@@ -338,9 +339,17 @@ def evaluate_blurt() -> Response:
         # Run Blurt LangGraph workflow synchronously
         final_state = blurt_graph.invoke(initial_state)
 
+        # Record activity
+        try:
+            mongo_manager.record_user_activity(user_id, action="blurt_audit")
+        except Exception:
+            pass
+
         return jsonify({
             "recalled_concepts": final_state.get("recalled_concepts", []),
             "missed_concepts": final_state.get("missed_concepts", []),
+            "score": final_state.get("score", 0),
+            "feedback": final_state.get("feedback", ""),
         })
 
     except Exception as exc:
@@ -518,6 +527,25 @@ def auth_me() -> Response:
 def list_users() -> Response:
     """Restricted: Private instances do not expose public user lists."""
     return jsonify({"users": []})
+
+
+@api_bp.route("/users/stats", methods=["GET"])
+def get_user_stats() -> Response:
+    """Retrieve live cognitive statistics, active recall mastery, and daily streak for current user."""
+    user_id = _get_request_user_id()
+    stats = mongo_manager.get_user_stats(user_id)
+    return jsonify(stats)
+
+
+@api_bp.route("/users/activity", methods=["POST"])
+def record_user_activity() -> Response:
+    """Record an active study session or recall interaction for current user."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    action = data.get("action", "review")
+    metadata = data.get("metadata")
+    mongo_manager.record_user_activity(user_id, action=action, metadata=metadata)
+    return jsonify({"status": "recorded", "user_id": user_id})
 
 
 # ============================================================================
@@ -932,10 +960,14 @@ def list_documents() -> Response:
 
 @api_bp.route("/documents/<document_id>", methods=["DELETE"])
 def delete_document(document_id: str) -> Response:
-    """Delete an uploaded document and its associated decks/vectors (idempotent)."""
+    """Delete an uploaded document and its associated vectors from Qdrant and MongoDB."""
     user_id = _get_request_user_id()
     deleted = mongo_manager.delete_document(document_id, user_id)
-    logger.info("Deleted document %s and associated decks for user %s (existed: %s)", document_id, user_id, deleted)
+    try:
+        qdrant_service.delete_document_chunks(user_id, document_id)
+    except Exception as exc:
+        logger.warning("Failed to delete Qdrant vectors for doc %s: %s", document_id, exc)
+    logger.info("Deleted document %s and unlinked from decks for user %s (existed: %s)", document_id, user_id, deleted)
     return jsonify({"status": "deleted", "document_id": document_id})
 
 

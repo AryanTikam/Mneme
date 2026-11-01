@@ -291,3 +291,43 @@ def test_deck_segregated_contexts_lifecycle():
     client.delete("/api/v1/documents/doc_ctx_beta", headers={"X-User-Id": user_id})
 
 
+def test_upload_context_directly_to_deck():
+    """Verify POST /api/v1/decks/<deck_id>/contexts/upload accepts PDF and links context."""
+    from unittest.mock import patch
+
+    app = create_app()
+    client = app.test_client()
+    user_id = "test_user_deck_upload"
+    headers = {"X-User-Id": user_id}
+
+    # 1. Create a deck
+    create_res = client.post(
+        "/api/v1/decks",
+        data=json.dumps({"title": "Direct Context Upload Deck"}),
+        content_type="application/json",
+        headers=headers,
+    )
+    assert create_res.status_code == 201
+    deck_id = create_res.get_json()["deck"]["id"]
+
+    # 2. Upload PDF directly to deck context
+    fake_pdf = io.BytesIO(b"%PDF-1.4\nvalid pdf dummy binary stream\n%%EOF")
+    with patch("tasks.celery_tasks._extract_text_from_file", return_value="This is sample lecture notes on neural networks and backpropagation gradient descent."):
+        upload_res = client.post(
+            f"/api/v1/decks/{deck_id}/contexts/upload",
+            data={"file": (fake_pdf, "embedded_lecture.pdf")},
+            content_type="multipart/form-data",
+            headers=headers,
+        )
+    assert upload_res.status_code == 200
+    upload_data = upload_res.get_json()
+    assert upload_data["status"] == "uploaded"
+    doc_id = upload_data["document_id"]
+    assert doc_id in upload_data["deck"]["document_ids"]
+
+    # Clean up
+    client.delete(f"/api/v1/decks/{deck_id}", headers=headers)
+    client.delete(f"/api/v1/documents/{doc_id}", headers=headers)
+
+
+

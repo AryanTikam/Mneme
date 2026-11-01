@@ -65,37 +65,52 @@ def query_qdrant_node(state: BlurtState) -> Dict[str, Any]:
 
 def compare_llm_node(state: BlurtState) -> Dict[str, Any]:
     """Invoke Groq Qwen 27B to compare user blurt with retrieved chunks and produce semantic diff."""
-    blurt_text = state.get("blurt_text", "")
+    blurt_text = state.get("blurt_text", "").strip()
     retrieved_chunks = state.get("retrieved_chunks", [])
 
+    if not retrieved_chunks:
+        return {
+            "recalled_concepts": [],
+            "missed_concepts": [],
+            "score": 0,
+            "feedback": "No uploaded source document chunks were found for this topic. Please upload a study PDF or select an active document to audit your recall.",
+            "raw_llm_output": "",
+        }
+
     # Assemble ground truth context
-    context_texts = [f"Chunk {i+1}:\n{c.get('text', '')}" for i, c in enumerate(retrieved_chunks)]
-    ground_truth = "\n\n".join(context_texts) if context_texts else "General domain knowledge."
+    context_texts = [f"[Note Segment {i+1}]:\n{c.get('text', '')}" for i, c in enumerate(retrieved_chunks)]
+    ground_truth = "\n\n".join(context_texts)
 
     system_instruction = (
-        "You are an elite active-recall auditor. "
-        "Your task is to perform a semantic difference evaluation between the Ground Truth study notes "
-        "and the Student's Recall Blurt. "
-        "Extract: "
-        "1. 'recalled_concepts': Important facts, principles, or keywords the student successfully retrieved. "
-        "2. 'missed_concepts': High-yield facts, mechanisms, or keywords present in the Ground Truth that the student omitted or misstated. "
-        "Output ONLY a valid JSON object with exact keys 'recalled_concepts' and 'missed_concepts':\n"
-        '{"recalled_concepts": ["concept 1", "concept 2"], "missed_concepts": ["concept 3", "concept 4"]}'
+        "You are an expert cognitive evaluator and active-recall auditor. "
+        "Compare the Student's Recall Blurt against the Ground Truth Study Notes. "
+        "Requirements:\n"
+        "1. 'recalled_concepts': Specific high-yield concepts, facts, formulas, or mechanisms from the notes that the student accurately retrieved or explained in their own words.\n"
+        "2. 'missed_concepts': Crucial concepts, steps, or principles present in the Ground Truth notes that the student omitted or misstated.\n"
+        "3. 'score': An integer percentage (0-100) reflecting the student's conceptual coverage of the ground truth material.\n"
+        "4. 'feedback': 2-3 concise sentences of constructive coaching highlighting what they mastered and the exact conceptual gap to review next.\n\n"
+        "Output ONLY a valid JSON object with exact keys 'recalled_concepts', 'missed_concepts', 'score', and 'feedback'. "
+        "No conversational preamble, markdown fences, or postscript."
     )
 
     user_prompt = (
-        f"GROUND TRUTH SOURCE NOTES:\n\"\"\"\n{ground_truth[:3000]}\n\"\"\"\n\n"
+        f"GROUND TRUTH SOURCE NOTES:\n\"\"\"\n{ground_truth[:3500]}\n\"\"\"\n\n"
         f"STUDENT RECALL BLURT:\n\"\"\"\n{blurt_text}\n\"\"\"\n\n"
-        "Evaluate the recall blurt and output the semantic diff JSON."
+        "Evaluate the recall blurt and output the semantic diff JSON:"
     )
 
     llm = get_llm_service()
     raw_completion = llm.generate(
         prompt=user_prompt,
         system_prompt=system_instruction,
-        max_new_tokens=512,
+        max_new_tokens=650,
         temperature=0.1,
     )
+
+    recalled = []
+    missed = []
+    score = 0
+    feedback = ""
 
     # Parse and validate with Pydantic
     try:
@@ -104,17 +119,28 @@ def compare_llm_node(state: BlurtState) -> Dict[str, Any]:
         validated = BlurtEvaluationModel(**data)
         recalled = validated.recalled_concepts
         missed = validated.missed_concepts
+        score = validated.score
+        feedback = validated.feedback
+        # Sanity check score if LLM omitted or zeroed with items present
+        if score == 0 and (recalled or missed):
+            total_items = len(recalled) + len(missed)
+            score = round((len(recalled) / total_items) * 100) if total_items > 0 else 0
     except (json.JSONDecodeError, ValidationError, Exception) as exc:
-        logger.warning("Failed to parse Blurt JSON response (%s). Applying heuristic extraction.", exc)
-        # Heuristic fallback parsing
-        lower_blurt = blurt_text.lower()
-        candidate_words = set(re.findall(r"\b[a-zA-Z]{5,}\b", ground_truth.lower()))
-        recalled = [w for w in candidate_words if w in lower_blurt][:6]
-        missed = [w for w in candidate_words if w not in lower_blurt][:6]
+        logger.warning("Failed to parse Blurt JSON response (%s). Applying robust semantic extraction.", exc)
+        stopwords = {"this", "that", "these", "those", "their", "there", "which", "where", "about", "could", "would", "should"}
+        gt_terms = [w for w in set(re.findall(r"\b[a-zA-Z]{5,}\b", ground_truth.lower())) if w not in stopwords]
+        blurt_lower = blurt_text.lower()
+        recalled = [t for t in gt_terms if t in blurt_lower][:6]
+        missed = [t for t in gt_terms if t not in blurt_lower][:6]
+        total = len(recalled) + len(missed)
+        score = round((len(recalled) / total) * 100) if total > 0 else 50
+        feedback = f"Identified {len(recalled)} concepts successfully recalled. Review the highlighted missed concepts to reinforce long-term memory."
 
     return {
         "recalled_concepts": recalled,
         "missed_concepts": missed,
+        "score": score,
+        "feedback": feedback,
         "raw_llm_output": raw_completion,
     }
 

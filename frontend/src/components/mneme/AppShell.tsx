@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { useAuth } from "@/services/mneme";
+import { useAuth, useUserStats } from "@/services/mneme";
 import { ChatDrawer } from "./ChatDrawer";
 import { LoginPage } from "./LoginPage";
 import { UserMenu } from "./UserMenu";
@@ -26,6 +26,7 @@ const NAV = [
 export function AppShell({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { currentUser } = useAuth();
+  const { stats } = useUserStats();
   const [chatOpen, setChatOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -136,11 +137,27 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </button>
               </nav>
 
-              {/* Streak */}
-              <div className="mt-auto rounded-2xl bg-secondary p-4">
-                <p className="text-xs font-semibold text-secondary-foreground">Daily streak</p>
-                <p className="font-display text-2xl font-bold text-secondary-foreground">12 days</p>
-                <p className="text-xs text-muted-foreground">Active recall mastery active</p>
+              {/* Real User Stats (Mobile) */}
+              <div className="mt-auto rounded-2xl bg-secondary/80 p-4 border border-border/40">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-secondary-foreground">Daily streak</p>
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                    {stats.mastery_percentage}% Mastery
+                  </span>
+                </div>
+                <p className="font-display text-2xl font-bold text-secondary-foreground mt-0.5">
+                  {stats.streak_days} {stats.streak_days === 1 ? "day" : "days"}
+                </p>
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full bg-primary rounded-full transition-all duration-500"
+                    style={{ width: `${Math.max(5, stats.mastery_percentage)}%` }}
+                  />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span className="truncate">{stats.active_recall_label}</span>
+                  <span className="font-semibold text-foreground/80 shrink-0 ml-1">{stats.total_cards} cards</span>
+                </div>
               </div>
             </motion.aside>
           </>
@@ -192,10 +209,27 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
         </nav>
 
-        <div className="mt-auto rounded-3xl bg-secondary p-4">
-          <p className="text-xs font-semibold text-secondary-foreground">Daily streak</p>
-          <p className="font-display text-2xl font-bold text-secondary-foreground">12 days</p>
-          <p className="text-xs text-muted-foreground">Active recall mastery active</p>
+        {/* Real User Stats (Desktop) */}
+        <div className="mt-auto rounded-3xl bg-secondary/80 p-4 border border-border/40">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-secondary-foreground">Daily streak</p>
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+              {stats.mastery_percentage}% Mastery
+            </span>
+          </div>
+          <p className="font-display text-2xl font-bold text-secondary-foreground mt-0.5">
+            {stats.streak_days} {stats.streak_days === 1 ? "day" : "days"}
+          </p>
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full bg-primary rounded-full transition-all duration-500"
+              style={{ width: `${Math.max(5, stats.mastery_percentage)}%` }}
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+            <span className="truncate">{stats.active_recall_label}</span>
+            <span className="font-semibold text-foreground/80 shrink-0 ml-1">{stats.total_cards} cards</span>
+          </div>
         </div>
       </aside>
 

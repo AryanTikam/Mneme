@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { AppShell, PageHeader } from "@/components/mneme/AppShell";
-import { useStudyDeck } from "@/services/mneme";
+import { useStudyDeck, useUserStats } from "@/services/mneme";
 
 export const Route = createFileRoute("/quiz")({
   head: () => ({
@@ -42,6 +42,7 @@ type QuestionResult = {
 function QuizPage() {
   const { allDecks, activeDeck, activeDeckId, setActiveDeckId, mcqs, deleteDeck } =
     useStudyDeck("quiz");
+  const { recordActivity } = useUserStats();
   const navigate = useNavigate();
 
   const [qi, setQi] = useState(0);
@@ -73,6 +74,7 @@ function QuizPage() {
     setPicked(i);
     const isRight = i === q.answer;
     if (isRight) setCorrect((c) => c + 1);
+    recordActivity("quiz_attempt", { isRight });
 
     setHistory((prev) => [
       ...prev,

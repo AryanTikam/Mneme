@@ -49,6 +49,8 @@ class BlurtEvaluationModel(BaseModel):
     """Semantic diff result from Blurt mode comparing recall against ground truth."""
     recalled_concepts: List[str] = Field(default_factory=list, description="Key concepts successfully recalled")
     missed_concepts: List[str] = Field(default_factory=list, description="Key ground-truth concepts absent in blurt")
+    score: int = Field(default=0, ge=0, le=100, description="Quantitative retention score from 0 to 100")
+    feedback: str = Field(default="", description="Diagnostic assessment of conceptual strengths and critical gaps")
 
 
 class IntentClassificationModel(BaseModel):
@@ -85,6 +87,8 @@ class BlurtState(TypedDict):
     retrieved_chunks: List[Dict[str, Any]]
     recalled_concepts: List[str]
     missed_concepts: List[str]
+    score: int
+    feedback: str
     raw_llm_output: Optional[str]
 
 

@@ -91,7 +91,7 @@ function SwipeCard({ card, onDone }: { card: Flashcard; onDone: (dir: "left" | "
 }
 
 function FlashcardsPage() {
-  const { allDecks, activeDeck, activeDeckId, setActiveDeckId, flashcards, deleteDeck } =
+  const { allDecks, activeDeck, activeDeckId, setActiveDeckId, flashcards, deleteDeck, recordCardReview } =
     useStudyDeck("flashcards");
   const navigate = useNavigate();
   const [index, setIndex] = useState(0);
@@ -113,6 +113,7 @@ function FlashcardsPage() {
 
   const next = (dir: "left" | "right") => {
     if (card) {
+      recordCardReview(card.id, dir === "right" ? "good" : "again");
       if (dir === "left") {
         setScore((s) => ({ ...s, again: s.again + 1 }));
         setMissedCards((m) => [...m, card]);

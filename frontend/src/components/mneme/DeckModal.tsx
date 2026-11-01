@@ -49,12 +49,18 @@ export function DeckModal({
 
   const { updateDeck } = useDecks();
   const { folders } = useFolders();
-  const { attachedDocs, availableDocs, attachDoc, detachDoc, uploadDocToDeck } = useDeckContexts(deckId);
+  const { attachedDocs, availableDocs, allDocs, attachDoc, detachDoc, deleteDocPermanently, uploadDocToDeck } = useDeckContexts(deckId);
 
   const [activeTab, setActiveTab] = useState<"flashcards" | "quizzes" | "contexts" | "ai">("flashcards");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedContextToAttach, setSelectedContextToAttach] = useState<string>("none");
   const [uploadingContext, setUploadingContext] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<{
+    stage: "idle" | "uploading" | "indexing" | "success" | "error";
+    fileName?: string;
+    message?: string;
+    progress?: number;
+  }>({ stage: "idle" });
 
   // Deck metadata editing
   const [editingTitle, setEditingTitle] = useState(false);
@@ -283,19 +289,25 @@ export function DeckModal({
                 </div>
 
                 {/* Color Selector */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-muted-foreground">Color:</span>
-                  <div className="flex items-center gap-1">
-                    {FOLDER_COLORS.map((c) => (
-                      <button
-                        key={c.value}
-                        onClick={() => handleColorChange(c.value)}
-                        className={`h-5 w-5 rounded-full ${c.dot} transition-transform ${
-                          deck.color === c.value ? "scale-125 ring-2 ring-primary ring-offset-2" : "opacity-70 hover:opacity-100"
-                        }`}
-                        title={c.label}
-                      />
-                    ))}
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-medium text-muted-foreground shrink-0">Color:</span>
+                  <div className="flex items-center gap-2.5 px-1 py-1">
+                    {FOLDER_COLORS.map((c) => {
+                      const isSelected = deck.color === c.value;
+                      return (
+                        <button
+                          key={c.value}
+                          type="button"
+                          onClick={() => handleColorChange(c.value)}
+                          className={`h-4 w-4 rounded-full ${c.dot} transition-transform focus:outline-none ${
+                            isSelected
+                              ? "ring-2 ring-primary ring-offset-2 ring-offset-card scale-110 shadow-sm"
+                              : "opacity-60 hover:opacity-100 hover:scale-105"
+                          }`}
+                          title={c.label}
+                        />
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -883,6 +895,23 @@ export function DeckModal({
                       >
                         Attach to Deck
                       </button>
+                      {selectedContextToAttach !== "none" && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const targetDoc = availableDocs.find((d) => d.document_id === selectedContextToAttach);
+                            if (confirm(`Permanently delete "${targetDoc?.filename || "this document"}" from your library and all decks?`)) {
+                              await deleteDocPermanently(selectedContextToAttach);
+                              setSelectedContextToAttach("none");
+                              onUpdated();
+                            }
+                          }}
+                          className="rounded-xl border border-destructive/20 bg-destructive/5 p-2 text-destructive hover:bg-destructive hover:text-destructive-foreground transition shrink-0"
+                          title="Permanently delete this document from library"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="rounded-xl border border-border/60 bg-muted/30 px-3.5 py-2.5 text-xs text-muted-foreground">
@@ -907,9 +936,68 @@ export function DeckModal({
                   <label className="text-xs font-semibold text-foreground">
                     2. Upload New PDF Directly to this Deck
                   </label>
+
+                  {/* Active Uploading / Vectorizing Progress */}
+                  {(uploadStatus.stage === "uploading" || uploadStatus.stage === "indexing") && (
+                    <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 space-y-2.5 animate-in fade-in duration-200">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-foreground flex items-center gap-2 truncate">
+                          <Upload className="h-4 w-4 text-primary animate-bounce shrink-0" />
+                          <span className="truncate">{uploadStatus.fileName}</span>
+                        </span>
+                        <span className="text-primary font-bold ml-2 shrink-0">{uploadStatus.progress}%</span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full bg-primary transition-all duration-300 rounded-full"
+                          style={{ width: `${uploadStatus.progress}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                        <Sparkles className="h-3.5 w-3.5 text-primary animate-spin shrink-0" />
+                        {uploadStatus.message}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Success Feedback */}
+                  {uploadStatus.stage === "success" && (
+                    <div className="rounded-2xl border border-success/30 bg-success/10 p-3.5 flex items-center justify-between text-xs text-success animate-in fade-in duration-200">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <Check className="h-4 w-4 shrink-0" />
+                        <span>{uploadStatus.message}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setUploadStatus({ stage: "idle" })}
+                        className="text-muted-foreground hover:text-foreground ml-2"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Error Feedback */}
+                  {uploadStatus.stage === "error" && (
+                    <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-3.5 flex items-center justify-between text-xs text-destructive animate-in fade-in duration-200">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <X className="h-4 w-4 shrink-0" />
+                        <span>{uploadStatus.message}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setUploadStatus({ stage: "idle" })}
+                        className="hover:opacity-75 ml-2"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Upload Label/Dropzone */}
                   <label
                     className={`group flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border-2 border-dashed border-border bg-muted/20 p-4 transition cursor-pointer hover:border-primary hover:bg-muted/40 ${
-                      uploadingContext ? "opacity-50 cursor-not-allowed" : ""
+                      uploadingContext ? "opacity-50 cursor-not-allowed pointer-events-none" : ""
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
@@ -926,7 +1014,7 @@ export function DeckModal({
                       </div>
                     </div>
                     <span className="rounded-xl bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shrink-0 shadow-sm transition hover:opacity-90">
-                      {uploadingContext ? "Ingesting..." : "Select PDF Document"}
+                      {uploadingContext ? "Processing..." : "Select PDF Document"}
                     </span>
                     <input
                       type="file"
@@ -937,9 +1025,39 @@ export function DeckModal({
                         const f = e.target.files?.[0];
                         if (f) {
                           setUploadingContext(true);
+                          setUploadStatus({
+                            stage: "uploading",
+                            fileName: f.name,
+                            message: "Uploading document...",
+                            progress: 30,
+                          });
+                          const pTimer = setTimeout(() => {
+                            setUploadStatus({
+                              stage: "indexing",
+                              fileName: f.name,
+                              message: "Extracting concepts & vectorizing to Qdrant...",
+                              progress: 70,
+                            });
+                          }, 600);
+
                           try {
                             await uploadDocToDeck(f);
+                            clearTimeout(pTimer);
+                            setUploadStatus({
+                              stage: "success",
+                              fileName: f.name,
+                              message: `Successfully attached ${f.name} to this deck!`,
+                              progress: 100,
+                            });
                             onUpdated();
+                          } catch (err: any) {
+                            clearTimeout(pTimer);
+                            setUploadStatus({
+                              stage: "error",
+                              fileName: f.name,
+                              message: err.message || "Failed to process PDF document.",
+                              progress: 0,
+                            });
                           } finally {
                             setUploadingContext(false);
                             e.target.value = "";
@@ -997,22 +1115,37 @@ export function DeckModal({
                               </span>
                             </div>
                             <p className="text-[11px] text-muted-foreground mt-0.5">
-                              {doc.chunk_count || 0} semantic chunks • ID: {doc.document_id.slice(0, 10)}
+                              {doc.chunk_count || 0} semantic chunks • ID: {(doc.document_id || "").slice(0, 10)}
                             </p>
                           </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await detachDoc(doc.document_id);
-                            onUpdated();
-                          }}
-                          className="rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive-soft hover:border-destructive/30 shrink-0 transition"
-                          title="Detach from this deck (document remains in library)"
-                        >
-                          Detach
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await detachDoc(doc.document_id);
+                              onUpdated();
+                            }}
+                            className="rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition"
+                            title="Detach from this deck (document remains in library)"
+                          >
+                            Detach
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (confirm(`Permanently delete "${doc.filename}" from your library and all decks?`)) {
+                                await deleteDocPermanently(doc.document_id);
+                                onUpdated();
+                              }
+                            }}
+                            className="rounded-xl border border-destructive/20 bg-destructive/5 p-1.5 text-xs font-medium text-destructive hover:bg-destructive hover:text-destructive-foreground transition"
+                            title="Permanently delete document"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
