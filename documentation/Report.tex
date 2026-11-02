@@ -157,7 +157,7 @@ Academic Year 2026--2027\par}
 
 Traditional academic review practices rely heavily on passive rereading and rote highlighting. Empirical educational neuroscience demonstrates that these passive modalities produce rapid cognitive decay along the Ebbinghaus forgetting curve, with retention falling below 30 percent within forty-eight hours. Mneme is an end-to-end active recall and spaced repetition learning system engineered to transform raw educational literature into verifiable long-term semantic memory. The platform accepts unstructured academic lecture documents in PDF, Markdown, and plain text formats, partitions them via semantic chunking algorithms, and embeds them into isolated tenant vector partitions in a Qdrant vector database.
 
-The computational core leverages Groq Language Processing Units (LPU) serving the Qwen 2.5/3.8 27B-Instruct parameter model. A distributed Celery worker pool decoupled through Redis coordinates asynchronous indexing and deterministic card synthesis. To ensure structural reliability, generative outputs are governed by cyclical LangGraph state machines equipped with Pydantic schema validation barriers. In addition to spaced-repetition flashcards and multiple-choice diagnostic quizzes, Mneme introduces two novel interactive cognitive paradigms: Blurt Mode and the Socratic Feynman Tutor. Blurt Mode provides a timed arena where student free-recall text is compared semantically against source documents via a dedicated LangGraph workflow, extracting recalled concepts, pinpointing knowledge voids, and issuing an objective retention score. The Feynman Tutor utilizes an intent-routing LangGraph state machine to engage learners Socratically or challenge them as Richard Feynman to explain concepts without technical jargon, graded dynamically via deterministic Flesch Reading Ease metrics. Built on a resilient stack featuring React 19, Tailwind CSS, Flask, and MongoDB Atlas, Mneme enforces absolute multi-tenant isolation and live per-user cognitive mastery tracking.
+The computational core leverages Groq Language Processing Units (LPU) serving the Qwen 2.5/3.8 27B-Instruct parameter model. A distributed Celery worker pool decoupled through Redis coordinates asynchronous indexing and deterministic card synthesis. To ensure structural reliability, generative outputs are governed by cyclical LangGraph state machines equipped with Pydantic schema validation barriers. In addition to spaced-repetition flashcards and multiple-choice diagnostic quizzes, Mneme introduces two novel interactive cognitive paradigms: Blurt Mode and the Socratic Feynman Tutor. Blurt Mode provides a timed arena where student free-recall text is compared semantically against source documents via a dedicated LangGraph workflow, extracting recalled concepts, pinpointing knowledge voids, and issuing an objective retention score. The Feynman Tutor utilizes an intent-routing LangGraph state machine to engage learners Socratically or challenge them as Richard Feynman to explain concepts without technical jargon, graded dynamically via deterministic Flesch Reading Ease metrics. Built on a resilient stack featuring React 19, Tailwind CSS, Flask, and MongoDB Atlas, Mneme enforces absolute multi-tenant isolation and live per-user cognitive mastery tracking. The complete open-source codebase, architecture specifications, and reproduction guides are publicly available at \url{https://github.com/AryanTikam/Mneme}.
 
 \newpage
 \pagenumbering{arabic}
@@ -244,7 +244,7 @@ The Blurt Method involves reading a chapter, closing all materials, and writing 
 \chapter{Application Workflow and System Architecture}
 
 \section{High-Level Architectural Overview}
-Mneme is engineered as a decoupled, asynchronous microservices-oriented web application. The technical stack spans five primary layers:
+Mneme is engineered as a decoupled, asynchronous microservices-oriented web application, illustrated in Figure~\ref{fig:system_arch}. The technical stack spans five primary layers:
 \begin{enumerate}
     \item \textbf{Presentation Layer (Frontend):} Built with React 19, TypeScript, TanStack Router, Tailwind CSS, and Framer Motion. Implements responsive navigation, tactile 3D swipeable flashcards, real-time SSE chat drawers, and multi-folder deck management.
     \item \textbf{Application Gateway (REST API):} Implemented in Python using Flask and Werkzeug, providing endpoints for document upload, asynchronous task tracking, authentication, CRUD deck manipulation, and SSE streaming.
@@ -252,6 +252,7 @@ Mneme is engineered as a decoupled, asynchronous microservices-oriented web appl
     \item \textbf{Vector and Relational Storage Layer:} Qdrant vector database handles high-dimensional dense vector embeddings with strict tenant payload filtering. MongoDB Atlas serves as the primary document store for users, folders, decks, cards, and daily activity logs.
     \item \textbf{Inference Engine:} Groq Cloud Language Processing Units running Qwen 2.5/3.8 27B-Instruct, delivering generation speeds exceeding 140 tokens per second.
 \end{enumerate}
+The complete software implementation, infrastructure configurations, and test suites are publicly maintained at \url{https://github.com/AryanTikam/Mneme}.
 
 \begin{figure}[H]
     \centering
@@ -261,7 +262,7 @@ Mneme is engineered as a decoupled, asynchronous microservices-oriented web appl
 \end{figure}
 
 \section{System Actor Interactions and Use Case Workflow}
-The interactions between the learner and the Mneme platform encompass six primary functional areas: authentication and tenant onboarding, document context ingestion, deck and folder organization, active recall flashcard and quiz drills, timed blurt testing, and Socratic Feynman tutoring.
+The interactions between the learner and the Mneme platform encompass six primary functional areas, depicted in the comprehensive use case diagram in Figure~\ref{fig:use_case}: authentication and tenant onboarding, document context ingestion, deck and folder organization, active recall flashcard and quiz drills, timed blurt testing, and Socratic Feynman tutoring.
 
 \begin{figure}[H]
     \centering
@@ -271,7 +272,7 @@ The interactions between the learner and the Mneme platform encompass six primar
 \end{figure}
 
 \section{Document Ingestion and Vectorization Workflow}
-When a user uploads a study document (PDF, DOCX, Markdown, or TXT), the application executes a multi-stage ingestion protocol:
+When a user uploads a study document (PDF, DOCX, Markdown, or TXT), the application executes a multi-stage ingestion protocol, illustrated in the sequence diagram in Figure~\ref{fig:ingest_seq}:
 \begin{enumerate}
     \item \textbf{Document Reception:} The Flask API generates a unique identifier for the document (\texttt{doc\_xxxx}), persists the raw file, and registers a document record in MongoDB with status \texttt{pending}.
     \item \textbf{Task Dispatch:} An asynchronous Celery task (\texttt{mneme.ingest\_pdf}) is enqueued to Redis, returning an immediate task ID (\texttt{202 Accepted}) to the browser.
@@ -292,7 +293,7 @@ When a user uploads a study document (PDF, DOCX, Markdown, or TXT), the applicat
 \end{figure}
 
 \section{Cyclical LangGraph State Machine for Flashcard and Quiz Synthesis}
-Conventional LLM prompt pipelines that request JSON directly from an inference endpoint suffer from hallucinated formats, truncated lists, and trailing commas that break downstream parsers. Mneme overcomes this vulnerability by implementing a cyclical LangGraph state machine (\texttt{generator\_graph.py}) with automatic self-correction.
+Conventional LLM prompt pipelines that request JSON directly from an inference endpoint suffer from hallucinated formats, truncated lists, and trailing commas that break downstream parsers. Mneme overcomes this vulnerability by implementing a cyclical LangGraph state machine (\texttt{generator\_graph.py}) with automatic self-correction, as illustrated in Figure~\ref{fig:langgraph_gen}.
 
 \begin{figure}[H]
     \centering
@@ -317,6 +318,18 @@ class FlashcardDeckModel(BaseModel):
     \item \textbf{FormatErrorNode:} If validation raises a \texttt{ValidationError}, the error message is fed back into the prompt context, and the node re-executes with adjusted temperature, guaranteeing zero runtime JSON parse failures.
 \end{enumerate}
 
+\subsection{Diagnostic Multiple-Choice Quiz Interface and Rationales}
+Diagnostic forced-choice testing prevents recognition illusions by demanding active discrimination among plausible conceptual alternatives. As illustrated in Figure~\ref{fig:ui_quiz}, the quiz interface presents high-yield multiple-choice questions synthesized by the LangGraph pipeline. Each item features a distinct problem statement and four candidate options, including one definitively correct response and three domain-specific distractors that model common student misconceptions.
+
+Upon option selection, the interface provides immediate visual validation: the correct answer is highlighted in green with a checkmark badge, while incorrect choices are flagged with an error state. Below each question, an expandable accordion reveals the verified pedagogical explanation and document citation, clarifying why the correct choice holds and why distractors are invalid. A running score counter and progress indicator maintain motivation throughout the assessment.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth,height=0.44\textheight,keepaspectratio]{figures/ui_quiz.png}
+    \caption{Diagnostic Multiple-Choice Quiz Interface with Instant Pedagogical Rationale.}
+    \label{fig:ui_quiz}
+\end{figure}
+
 \section{Segregated Deck-Centric Context Architecture}
 Earlier generation prototypes coupled uploaded documents strictly to isolated files or global scopes, forcing duplicate uploads or confusing cross-topic retrieval. Mneme establishes the \textbf{Study Deck} as the fundamental cognitive organizing unit:
 \begin{itemize}
@@ -331,6 +344,19 @@ Earlier generation prototypes coupled uploaded documents strictly to isolated fi
     \item Permanent deletion of a context from the library decouples it from all associated decks and executes an idempotent point purge in Qdrant matching \texttt{document\_id}.
 \end{itemize}
 
+\subsection{Entity-Relationship Schema Architecture}
+The underlying persistence architecture bifurcates operational document data in MongoDB Atlas from high-dimensional semantic vectors in Qdrant Cloud. As illustrated in the Entity-Relationship Schema in Figure~\ref{fig:erd_diagram}, the data model enforces strict multi-tenant isolation and per-card algorithmic parameterization across eight core entities:
+\begin{enumerate}
+    \item \textbf{User Entity:} Governs tenant authentication with hashed passwords, username uniqueness, daily study streaks, and longitudinal activity dates.
+    \item \textbf{Folder Entity:} Provides visual and hierarchical categorization for decks, defining user-customizable color assignments and ordering.
+    \item \textbf{Deck Entity:} Serves as the central study hub, maintaining the list of bound document IDs, embedded flashcard and quiz arrays, mastery percentages, and timestamps.
+    \item \textbf{Flashcard Entity:} Implements Piotr Wozniak's SuperMemo-2 mathematical state, persisting repetition count ($n$), interval days ($I$), Ease Factor ($EF$), cumulative lapses ($L$), review counts, and scheduled review timestamps ($t_{\text{next}}, t_{\text{last}}$).
+    \item \textbf{QuizQuestion Entity:} Stores forced-choice diagnostic items comprising question stems, option arrays, ground-truth answer indices, and pedagogical rationales.
+    \item \textbf{Document Entity:} Tracks uploaded educational files, file formats, extracted chunk tallies, extraction statuses, and summarization metadata.
+    \item \textbf{VectorEmbedding Entity (Qdrant):} Stores dense 384-dimensional semantic chunk embeddings indexed with payload filters on \texttt{user\_id} and \texttt{document\_id}.
+    \item \textbf{CardReviewLog Entity:} Logs every individual active recall drill event, recording rating choices, quality scores, applied intervals, and timestamps for longitudinal auditability.
+\end{enumerate}
+
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.92\textwidth,height=0.45\textheight,keepaspectratio]{figures/fig_erd_diagram.png}
@@ -338,8 +364,20 @@ Earlier generation prototypes coupled uploaded documents strictly to isolated fi
     \label{fig:erd_diagram}
 \end{figure}
 
+\subsection{Central Dashboard and Study Deck Workspace Interface}
+The client dashboard serves as the central orchestration workspace, binding longitudinal learning analytics with intuitive deck and document controls. As illustrated in Figure~\ref{fig:ui_dashboard}, the interface aggregates high-level cognitive metrics across four responsive summary tiles: cumulative active mastery percentage, the current consecutive daily streak, total cards due across all tenant decks, and the number of ingested document contexts vectorized in Qdrant.
+
+Study decks are displayed in an adaptive card grid categorized into user-defined, color-coded folders (Indigo, Emerald, Violet, Amber, Rose, and Sky). Each deck card visualizes key operational parameters, including total flashcard and quiz items, linked source PDF filenames, and a retention stability bar reflecting recent recall success. Direct action triggers on each deck card allow learners to immediately initiate flashcard drills, launch diagnostic quizzes, or enter the Blurt arena. Document ingestion modals support drag-and-drop file uploads, vectorizing notes into tenant partitions with live status indicators.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth,height=0.44\textheight,keepaspectratio]{figures/ui_dashboard.png}
+    \caption{Mneme Central Dashboard and Study Deck Management Interface.}
+    \label{fig:ui_dashboard}
+\end{figure}
+
 \section{Blurt Mode Cognitive Audit LangGraph Workflow}
-The Blurt Mode arena provides a structured active-recall testing environment driven by a specialized LangGraph workflow (\texttt{blurt\_graph.py}):
+The Blurt Mode arena provides a structured active-recall testing environment driven by a specialized LangGraph workflow (\texttt{blurt\_graph.py}), illustrated in Figure~\ref{fig:langgraph_blurt}:
 \begin{enumerate}
     \item \textbf{Pre-Session Configuration Screen:} Rather than thrusting the learner into an immediate countdown, Blurt Mode opens with a dedicated setup interface. The learner selects their target study deck (with card counts and context badges) and chooses a timer duration (1 minute quick sprint, 3 minutes focused recall, 5 minutes standard, or 10 minutes deep dive).
     \item \textbf{Active Recall Typing Phase:} Upon session start, the countdown timer initiates with an animated progress bar. The student types everything remembered from the selected deck.
@@ -363,8 +401,25 @@ The Blurt Mode arena provides a structured active-recall testing environment dri
     \label{fig:langgraph_blurt}
 \end{figure}
 
+\subsection{Interactive Blurt Arena and Neural Retention Audit Presentation}
+The frontend implementation of Blurt Mode translates the audit workflow into an engaging, low-distraction two-stage recall arena, as shown in Figure~\ref{fig:ui_blurt}. During the active typing sprint, a distraction-free text editor presents real-time elapsed duration, remaining sprint countdown, and a live word counter. The student is challenged to retrieve ideas entirely from memory without visual hints or reference text.
+
+Upon completion or timer expiration, the view transitions to the AI Semantic Audit Report card. The client visualizes the objective coverage percentage alongside an analytical breakdown:
+\begin{itemize}
+    \item \textbf{Recalled Concept Badges:} Displayed in green, celebrating specific theorems, steps, and terminology accurately retrieved.
+    \item \textbf{Missed Knowledge Voids:} Displayed in red, explicitly highlighting critical omissions and gaps identified against the source literature.
+    \item \textbf{Formative Pedagogical Coaching:} Delivers targeted guidance on what principles require immediate review before the next spaced repetition cycle.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth,height=0.44\textheight,keepaspectratio]{figures/ui_blurt.png}
+    \caption{Timed Blurt Mode Free-Recall Arena and Cognitive Retention Audit Report.}
+    \label{fig:ui_blurt}
+\end{figure}
+
 \section{Unified Socratic and Feynman Tutor LangGraph Workflow}
-The Feynman Tutor provides an interactive conversational drawer accessible across the entire application, powered by a dynamic intent-routing LangGraph workflow (\texttt{chat\_graph.py}):
+The Feynman Tutor provides an interactive conversational drawer accessible across the entire application, powered by a dynamic intent-routing LangGraph workflow (\texttt{chat\_graph.py}), illustrated in Figure~\ref{fig:langgraph_chat}:
 \begin{enumerate}
     \item \textbf{RetrieveContextNode:} High-dimensional vector search retrieves the top document chunks matching the user's message across the documents bound to that deck, augmented by the deck's flashcard concepts.
     \item \textbf{IntentRouterNode:} A lightweight model call determines user intent, classifying whether the student is inquiring (\texttt{ask}) or explaining a concept in their own words (\texttt{teach}):
@@ -385,6 +440,18 @@ The Feynman Tutor provides an interactive conversational drawer accessible acros
     \includegraphics[width=0.92\textwidth,height=0.45\textheight,keepaspectratio]{figures/fig_langgraph_chat.png}
     \caption{LangGraph Unified Socratic and Feynman Chat Workflow.}
     \label{fig:langgraph_chat}
+\end{figure}
+
+\subsection{Interactive Socratic and Feynman Tutor Interface}
+The presentation layer implements the conversational tutor as a slide-over drawer accessible globally throughout the platform without disrupting ongoing study sessions. As depicted in Figure~\ref{fig:ui_feynman_chat}, the interface features a dual-mode persona selector, permitting students to toggle between Socratic guided inquiry and the Richard Feynman teaching challenge.
+
+When the learner writes an explanation in Teach Mode, a real-time client-side NLP analyzer updates the Flesch Reading Ease score, average syllables per word, and average sentence length. If the student relies on memorized textbook buzzwords without unpacking their mechanical meaning, the score drops into the complex grade bracket, prompting the tutor to intervene with targeted questions. Responses stream dynamically token-by-token over Server-Sent Events, creating an engaging, conversational pair-learning environment grounded strictly in the learner's uploaded notes.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth,height=0.44\textheight,keepaspectratio]{figures/ui_feynman_chat.png}
+    \caption{Socratic and Feynman Interactive Tutor Slide-Over Drawer with Real-Time Jargon Scoring.}
+    \label{fig:ui_feynman_chat}
 \end{figure}
 
 \section{SuperMemo-2 Spaced Repetition Engine and Predictive Calendar Scheduler}
@@ -436,15 +503,48 @@ The backend provides two primary endpoints for spaced schedule coordination:
 \end{enumerate}
 
 \subsection{Interactive Frontend Spaced Schedule Modal and Tactile Controls}
-In the presentation layer, the spaced schedule system surfaces via an interactive modal component (\texttt{SpacedScheduleModal.tsx}) launched by clicking the persistent streak counter in the bottom-left navigation bar. The modal presents four top-level metric tiles (Current Streak, Cards Due Today, Average Ease Factor, and Estimated Retrievability), the 35-day interactive calendar matrix, per-deck due cards summaries with direct review launchers, and the four literature-grounded daily tasks. Clicking any calendar date activates a detailed inspection modal (\texttt{DateDetailModal}) that enumerates every card due on that day, complete with front prompts, collapsible back answers, SuperMemo-2 metric badges (repetition number, Ease Factor, interval, and lapse tally), and a per-deck review button that deep-links directly into the target deck via URL search parameters.
+In the presentation layer, the active study and spaced repetition paradigms surface through two dedicated interactive interfaces: the tactile flashcard review studio (\texttt{flashcards.tsx}) and the predictive cognitive schedule calendar (\texttt{SpacedScheduleModal.tsx}).
 
-Within the active flashcard practice interface (\texttt{flashcards.tsx}), learners can toggle between reviewing all cards or isolating only cards currently due for spaced review. The route accepts direct deck deep-linking parameters (\texttt{/flashcards?deckId=...}), automatically switching the active study context to the requested deck. Flashcards present a 4-choice response dock (Again, Hard, Good, Easy) detailing exact interval consequences (1-day reset, 1.2x expansion, standard EF multiplication, or 1.3xEF bonus). For rapid physical keyboard navigation, numerical shortcuts (1, 2, 3, 4) and spacebar flipping are natively mapped, delivering fluid, low-latency recall sessions.
+\subsubsection{Active Recall Flashcard Review Studio}
+Within the active flashcard practice interface, illustrated in Figure~\ref{fig:ui_flashcards}, learners engage in low-friction active retrieval drills. Cards feature 3D perspective animations upon inspection, presenting a clear prompt stimulus on the front and hiding the atomic answer on the reverse until deliberately triggered via spacebar or tap. Learners can toggle between reviewing the entire deck or isolating only cards currently eligible for spaced review under Ebbinghaus decay thresholds.
+
+The bottom response dock features four tactile rating buttons:
+\begin{enumerate}
+    \item \textbf{Again ($q = 1$):} Memory lapse; resets interval to 1 day and increments lapse count.
+    \item \textbf{Hard ($q = 3$):} Successful but effortful recall; applies a conservative $1.2\times$ interval expansion and reduces the Ease Factor.
+    \item \textbf{Good ($q = 4$):} Optimal baseline recall; advances interval according to standard SuperMemo-2 polynomial multiplication ($I_n = \text{round}(I_{n-1} \times EF)$).
+    \item \textbf{Easy ($q = 5$):} Instantaneous effortless retrieval; awards a $1.3\times EF$ interval bonus and boosts the Ease Factor.
+\end{enumerate}
+For rapid physical keyboard navigation, numerical shortcuts (1, 2, 3, 4) and spacebar flipping are natively mapped, enabling rapid review sessions. The interface accepts direct deck deep-linking parameters (\texttt{/flashcards?deckId=...}), automatically switching the active study context to the target deck.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth,height=0.44\textheight,keepaspectratio]{figures/ui_flashcards.png}
+    \caption{Active Recall Flashcard Practice Interface with SuperMemo-2 Spaced Response Dock.}
+    \label{fig:ui_flashcards}
+\end{figure}
+
+The state machine governing these interval calculations and calendar projections is illustrated in Figure~\ref{fig:sm2_scheduler}.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.92\textwidth,height=0.44\textheight,keepaspectratio]{figures/fig_sm2_scheduler.png}
     \caption{SuperMemo-2 Spaced Repetition Interval and Predictive Calendar Scheduler State Machine.}
     \label{fig:sm2_scheduler}
+\end{figure}
+
+\subsubsection{Predictive Spaced Schedule and Date Inspection Modal}
+Launched by clicking the persistent streak counter in the bottom-left navigation bar, the Spaced Schedule Modal displays a comprehensive retention cockpit, as depicted in Figure~\ref{fig:ui_calendar_schedule}. Four top-level metric tiles report the current consecutive study streak, total cards due today, fleet-wide average Ease Factor, and estimated aggregate retrievability ($\bar{R}$). 
+
+The central 35-day interactive matrix provides a continuous rolling visual of learning consistency, displaying 14 days of historical activity, the current day status, and 20 days of projected future due dates. Below the matrix, the daily high-impact active recall task queue synthesizes four literature-grounded exercises: SM-2 spaced retrieval, 3-minute free-recall blurt sprints, Socratic Feynman explanations, and diagnostic quizzes.
+
+Clicking any calendar date cell activates the granular inspection modal (\texttt{DateDetailModal}). This modal enumerates every card due on the selected date, displaying front prompts, collapsible back answers, and SuperMemo-2 metric badges (repetition number, Ease Factor, interval in days, and lifetime lapses). Each card includes a direct review action button that deep-links into the specific deck, initiating a focused drill without requiring manual navigation.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth,height=0.44\textheight,keepaspectratio]{figures/ui_calendar_schedule.png}
+    \caption{Predictive Spaced Repetition 35-Day Rolling Calendar and Date Inspection Modal.}
+    \label{fig:ui_calendar_schedule}
 \end{figure}
 
 \newpage
@@ -604,7 +704,7 @@ While Mneme demonstrates high fidelity across textual and tabular academic liter
     \item \textbf{Full FSRS-4.5 Neural Scheduling:} Transitioning from traditional SuperMemo-2 heuristics to full neural-network-optimized Free Spaced Repetition parameter estimation for individualized memory stability modeling.
 \end{itemize}
 
-In conclusion, Mneme bridges the gap between educational cognitive theory and state-of-the-art generative artificial intelligence, establishing an accessible, rigorous platform for lifelong semantic mastery.
+In conclusion, Mneme bridges the gap between educational cognitive theory and state-of-the-art generative artificial intelligence, establishing an accessible, rigorous platform for lifelong semantic mastery. The complete source code, installation scripts, and system documentation are open-sourced under the MIT license at \url{https://github.com/AryanTikam/Mneme}.
 
 % ===================================================================
 % REFERENCES

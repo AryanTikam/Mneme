@@ -326,12 +326,12 @@ skinparam monochrome false
 entity "User" as user {
     * user_id : string <<PK>>
     --
-    email : string <<unique>>
+    username : string <<unique>>
     password_hash : string
-    display_name : string
-    created_at : timestamp
-    daily_streak : integer
+    name : string
+    streak : integer
     last_active_date : string
+    created_at : timestamp
 }
 
 entity "Folder" as folder {
@@ -340,6 +340,7 @@ entity "Folder" as folder {
     * user_id : string <<FK>>
     name : string
     color : string
+    order : integer
     created_at : timestamp
 }
 
@@ -350,6 +351,9 @@ entity "Deck" as deck {
     folder_id : string <<FK, optional>>
     title : string
     color : string
+    cards_count : integer
+    quizzes_count : integer
+    mastery : float
     document_ids : list[string]
     created_at : timestamp
     updated_at : timestamp
@@ -364,7 +368,12 @@ entity "Flashcard" as card {
     repetition : integer
     interval_days : float
     ease_factor : float
+    lapses : integer
+    review_count : integer
+    mastery : integer
+    last_reviewed_utc : timestamp
     next_review_utc : timestamp
+    created_at : timestamp
 }
 
 entity "QuizQuestion" as quiz {
@@ -384,49 +393,71 @@ entity "Document" as doc {
     filename : string
     file_type : string
     chunk_count : integer
+    summary : text
     status : string
     created_at : timestamp
 }
 
-entity "ActivityLog" as log {
-    * log_id : string <<PK>>
+entity "VectorEmbedding (Qdrant)" as vector {
+    * point_id : string <<PK>>
+    --
+    * document_id : string <<FK>>
+    * user_id : string <<tenant_filter>>
+    chunk_index : integer
+    text_content : text
+    dense_vector : float[384]
+}
+
+entity "CardReviewLog" as review_log {
+    * review_id : string <<PK>>
     --
     * user_id : string <<FK>>
-    deck_id : string <<FK, optional>>
-    action : string
-    score : float
+    * card_id : string <<FK>>
+    * deck_id : string <<FK>>
+    rating : string
+    quality : integer
+    interval_applied : float
+    ease_factor_applied : float
     timestamp : timestamp
 }
 
-user ||--o{ folder : owns
+user ||--o{ folder : creates
 user ||--o{ deck : owns
-user ||--o{ doc : owns
-user ||--o{ log : logs
-folder ||--o{ deck : organizes
+user ||--o{ doc : uploads
+user ||--o{ review_log : records
+folder ||--o{ deck : categorizes
 deck ||--|{ card : contains
 deck ||--|{ quiz : contains
-deck }o--o{ doc : binds (document_ids)
+deck }o--o{ doc : binds_contexts (document_ids)
+doc ||--|{ vector : partitions_into
+card ||--o{ review_log : tracks_history
 @enduml
 ```
 
 ### Mermaid
 ```mermaid
 erDiagram
-    USER ||--o{ FOLDER : owns
+    direction LR
+
+    USER ||--o{ FOLDER : creates
     USER ||--o{ DECK : owns
-    USER ||--o{ DOCUMENT : owns
-    USER ||--o{ ACTIVITY_LOG : logs
-    FOLDER ||--o{ DECK : organizes
+    USER ||--o{ DOCUMENT : uploads
+    USER ||--o{ CARD_REVIEW_LOG : records
+    FOLDER ||--o{ DECK : categorizes
     DECK ||--|{ FLASHCARD : contains
     DECK ||--|{ QUIZ_QUESTION : contains
     DECK }o--o{ DOCUMENT : binds_contexts
+    DOCUMENT ||--|{ VECTOR_EMBEDDING : partitions_into
+    FLASHCARD ||--o{ CARD_REVIEW_LOG : tracks_history
 
     USER {
         string user_id PK
-        string email
-        string display_name
-        int daily_streak
+        string username
+        string password_hash
+        string name
+        int streak
         string last_active_date
+        timestamp created_at
     }
 
     FOLDER {
@@ -434,6 +465,8 @@ erDiagram
         string user_id FK
         string name
         string color
+        int order
+        timestamp created_at
     }
 
     DECK {
@@ -442,7 +475,12 @@ erDiagram
         string folder_id FK
         string title
         string color
+        int cards_count
+        int quizzes_count
+        float mastery
         array document_ids
+        timestamp created_at
+        timestamp updated_at
     }
 
     FLASHCARD {
@@ -453,6 +491,12 @@ erDiagram
         int repetition
         float interval_days
         float ease_factor
+        int lapses
+        int review_count
+        int mastery
+        timestamp last_reviewed_utc
+        timestamp next_review_utc
+        timestamp created_at
     }
 
     QUIZ_QUESTION {
@@ -468,17 +512,32 @@ erDiagram
         string document_id PK
         string user_id FK
         string filename
+        string file_type
         int chunk_count
+        string summary
         string status
+        timestamp created_at
     }
 
-    ACTIVITY_LOG {
-        string log_id PK
+    VECTOR_EMBEDDING {
+        string point_id PK
+        string document_id FK
         string user_id FK
+        int chunk_index
+        string text_content
+        vector_384 dense_vector
+    }
+
+    CARD_REVIEW_LOG {
+        string review_id PK
+        string user_id FK
+        string card_id FK
         string deck_id FK
-        string action
-        float score
-        timestamp created_at
+        string rating
+        int quality
+        float interval_applied
+        float ease_factor_applied
+        timestamp timestamp
     }
 ```
 
@@ -809,3 +868,64 @@ stateDiagram-v2
 
     SpacedPersistence --> [*] : Queued for Next Review Point
 ```
+
+---
+
+## 10. Graphical User Interface (UI) Snapshot Layouts and Specifications
+
+This section details the layout specifications, state bindings, and interaction models for the six production UI snapshot figures incorporated into `documentation/Report.tex`:
+
+### 10.1 Diagnostic Multiple-Choice Quiz Interface (`figures/ui_quiz.png`)
+- **Report Reference**: Figure 5.5
+- **Primary Source Component**: `frontend/src/routes/quiz.tsx` (`QuizPage`)
+- **Key Visual Elements**:
+  - Progress tracker and active score counter (`Question X of Y`, running correctness percentage).
+  - High-yield conceptual stem synthesized via `generator_graph.py`.
+  - Four candidate response tiles with letter badges (`A`, `B`, `C`, `D`). Correct response rendered with emerald border/background; incorrect distractors flagged with crimson state upon selection.
+  - Expandable conceptual rationale accordion displaying the ground-truth document excerpt and pedagogical explanation.
+
+### 10.2 Central Dashboard and Study Deck Workspace (`figures/ui_dashboard.png`)
+- **Report Reference**: Figure 5.7
+- **Primary Source Component**: `frontend/src/routes/index.tsx` (`Dashboard`), `DeckModal.tsx`, `FolderModal.tsx`
+- **Key Visual Elements**:
+  - Four top-level metric summary tiles: Active Cognitive Mastery, Consecutive Streak, Due Cards Today, Ingested Contexts.
+  - Adaptive study deck grid organized by user-defined, color-coded folders (`Indigo`, `Emerald`, `Violet`, `Amber`, `Rose`, `Sky`).
+  - Per-deck card metadata: total card count, quiz item count, attached source document badges, and retention stability progress bar.
+  - Direct action triggers launching Flashcards, Diagnostic Quizzes, or the Blurt Arena.
+
+### 10.3 Timed Blurt Mode Arena and Retention Audit (`figures/ui_blurt.png`)
+- **Report Reference**: Figure 5.9
+- **Primary Source Component**: `frontend/src/routes/blurt.tsx` (`BlurtPage`)
+- **Key Visual Elements**:
+  - Two-stage layout: Left panel features the active free-recall typing arena with countdown timer, word counter, and distraction-free editor.
+  - Right panel visualizes the AI Semantic Audit Report produced by `blurt_graph.py`.
+  - Global retention coverage score ring (percentage of retrieved high-yield concepts).
+  - Green concept pills for successfully retrieved principles; red concept pills for identified knowledge voids/omissions.
+  - Formative pedagogical coaching box providing targeted review recommendations.
+
+### 10.4 Socratic and Feynman Interactive Tutor Drawer (`figures/ui_feynman_chat.png`)
+- **Report Reference**: Figure 5.11
+- **Primary Source Component**: `frontend/src/components/mneme/ChatDrawer.tsx`
+- **Key Visual Elements**:
+  - Slide-over global drawer accessible across all platform views without interrupting study flow.
+  - Real-time client-side NLP panel computing the Flesch Reading Ease score, average syllables per word, sentence complexity, and jargon penalty.
+  - Conversational message stream powered by Server-Sent Events (SSE) with token streaming from Groq Qwen 27B.
+  - Dual persona switch: Socratic guided inquiry vs Richard Feynman analogy and plain-language critique.
+
+### 10.5 Active Recall Flashcard Practice Studio (`figures/ui_flashcards.png`)
+- **Report Reference**: Figure 5.13
+- **Primary Source Component**: `frontend/src/routes/flashcards.tsx` (`FlashcardsPage`)
+- **Key Visual Elements**:
+  - 3D perspective flip card container with clean separation between front prompt stimulus and hidden back answer.
+  - SuperMemo-2 metric indicators displaying repetition number, current interval, and Ease Factor (`R2 · Next: ~6d · EF 2.50`).
+  - Four-tier tactile grading dock: `Again` (1d reset), `Hard` (1.2x), `Good` (standard EF), and `Easy` (1.3xEF bonus).
+  - Tactile keyboard navigation shortcuts (Space to flip, 1-4 for ratings) and due-only filtering toggle.
+
+### 10.6 Predictive Spaced Repetition Calendar and Date Inspection Modal (`figures/ui_calendar_schedule.png`)
+- **Report Reference**: Figure 5.15
+- **Primary Source Component**: `frontend/src/components/mneme/SpacedScheduleModal.tsx` (`SpacedScheduleModal`, `DateDetailModal`)
+- **Key Visual Elements**:
+  - Top statistical strip: Current Streak, Due Today, Fleet Average Ease Factor, Aggregate Retrievability ($R$).
+  - 35-day continuous rolling calendar matrix showing 14 historical days, current day status, and 20 projected days with status badges (`completed`, `due`, `rest`).
+  - Literature-grounded daily active recall task queue (SM-2 review, Blurt sprint, Feynman teaching, Diagnostic quiz).
+  - `DateDetailModal` overlay listing individual cards due on a selected date, complete with front prompts, collapsible back answers, SM-2 badges, and a direct review launcher deep-linking to the target deck (`/flashcards?deckId=...`).
