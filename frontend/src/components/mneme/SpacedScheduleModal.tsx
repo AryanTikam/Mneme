@@ -330,7 +330,10 @@ export function SpacedScheduleModal({
     setInspectDay(null);
     onClose();
     if (actionType === "flashcards") {
-      navigate({ to: "/flashcards" });
+      navigate({
+        to: "/flashcards",
+        search: deckId ? { deckId } : {},
+      });
     } else if (actionType === "blurt") {
       navigate({ to: "/blurt" });
     } else if (actionType === "quiz") {

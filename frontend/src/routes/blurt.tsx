@@ -26,6 +26,7 @@ import {
 } from "@/services/mneme";
 
 export const Route = createFileRoute("/blurt")({
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Blurt Mode — Mneme" },

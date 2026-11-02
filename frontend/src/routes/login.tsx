@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { LoginPage } from "@/components/mneme/LoginPage";
 
 export const Route = createFileRoute("/login")({
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Sign In or Register — Mneme" },

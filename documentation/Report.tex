@@ -265,7 +265,7 @@ The interactions between the learner and the Mneme platform encompass six primar
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.92\textwidth,height=0.48\textheight,keepaspectratio]{figures/fig_use_case.png}
+    \includegraphics[width=0.92\textwidth,height=0.44\textheight,keepaspectratio]{figures/fig_use_case.png}
     \caption{Mneme Comprehensive System Use Case Workflow.}
     \label{fig:use_case}
 \end{figure}
@@ -432,9 +432,9 @@ The backend provides two primary endpoints for spaced schedule coordination:
 \end{enumerate}
 
 \subsection{Interactive Frontend Spaced Schedule Modal and Tactile Controls}
-In the presentation layer, the spaced schedule system surfaces via an interactive modal component (\texttt{SpacedScheduleModal.tsx}) launched by clicking the persistent streak counter in the bottom-left navigation bar. The modal presents four top-level metric tiles (Current Streak, Cards Due Today, Average Ease Factor, and Estimated Retrievability), the 35-day interactive calendar matrix, per-deck due cards summaries with direct review launchers, and the four literature-grounded daily tasks.
+In the presentation layer, the spaced schedule system surfaces via an interactive modal component (\texttt{SpacedScheduleModal.tsx}) launched by clicking the persistent streak counter in the bottom-left navigation bar. The modal presents four top-level metric tiles (Current Streak, Cards Due Today, Average Ease Factor, and Estimated Retrievability), the 35-day interactive calendar matrix, per-deck due cards summaries with direct review launchers, and the four literature-grounded daily tasks. Clicking any calendar date activates a detailed inspection modal (\texttt{DateDetailModal}) that enumerates every card due on that day, complete with front prompts, collapsible back answers, SuperMemo-2 metric badges (repetition number, Ease Factor, interval, and lapse tally), and a per-deck review button that deep-links directly into the target deck via URL search parameters.
 
-Within the active flashcard practice interface (\texttt{flashcards.tsx}), learners can toggle between reviewing all cards or isolating only cards currently due for spaced review. Flashcards present a 4-choice response dock (Again, Hard, Good, Easy) detailing exact interval consequences (1-day reset, 1.2x expansion, standard EF multiplication, or 1.3xEF bonus). For rapid physical keyboard navigation, numerical shortcuts (1, 2, 3, 4) and spacebar flipping are natively mapped, delivering fluid, low-latency recall sessions.
+Within the active flashcard practice interface (\texttt{flashcards.tsx}), learners can toggle between reviewing all cards or isolating only cards currently due for spaced review. The route accepts direct deck deep-linking parameters (\texttt{/flashcards?deckId=...}), automatically switching the active study context to the requested deck. Flashcards present a 4-choice response dock (Again, Hard, Good, Easy) detailing exact interval consequences (1-day reset, 1.2x expansion, standard EF multiplication, or 1.3xEF bonus). For rapid physical keyboard navigation, numerical shortcuts (1, 2, 3, 4) and spacebar flipping are natively mapped, delivering fluid, low-latency recall sessions.
 
 \newpage
 
@@ -557,7 +557,7 @@ Free-Recall / Blurt Practice (Karpicke \& Blunt, 2011) & 88.5\% & 67.0\% & 61.2\
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.92\textwidth,height=0.48\textheight,keepaspectratio]{figures/fig_retention_curve.png}
+    \includegraphics[width=0.92\textwidth,height=0.44\textheight,keepaspectratio]{figures/fig_retention_curve.png}
     \caption{Empirical Memory Retention Curves Across Learning Modalities (Adapted from Roediger \& Karpicke, 2006; Karpicke \& Blunt, 2011; Cepeda et al., 2006).}
     \label{fig:retention_curve}
 \end{figure}

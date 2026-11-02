@@ -31,6 +31,7 @@ import {
 } from "@/services/mneme";
 
 export const Route = createFileRoute("/")({
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Mneme — AI Active Recall Studio" },

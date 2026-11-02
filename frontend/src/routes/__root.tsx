@@ -75,6 +75,7 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  ssr: false,
   head: () => ({
     meta: [
       { charSet: "utf-8" },

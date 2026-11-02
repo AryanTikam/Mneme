@@ -17,6 +17,7 @@ import { AppShell, PageHeader } from "@/components/mneme/AppShell";
 import { useStudyDeck, useUserStats } from "@/services/mneme";
 
 export const Route = createFileRoute("/quiz")({
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Diagnostic Quiz — Mneme" },

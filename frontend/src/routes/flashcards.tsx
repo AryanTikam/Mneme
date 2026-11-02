@@ -18,7 +18,15 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { AppShell, PageHeader } from "@/components/mneme/AppShell";
 import { useStudyDeck, type Flashcard } from "@/services/mneme";
 
+type FlashcardsSearch = {
+  deckId?: string | undefined;
+};
+
 export const Route = createFileRoute("/flashcards")({
+  ssr: false,
+  validateSearch: (search: Record<string, unknown>): FlashcardsSearch => ({
+    deckId: typeof search["deckId"] === "string" ? (search["deckId"] as string) : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Flashcards — Mneme" },
@@ -184,6 +192,7 @@ function SwipeCard({ card, flipped, onToggleFlip, onSwipe }: SwipeCardProps) {
 }
 
 function FlashcardsPage() {
+  const { deckId: searchDeckId } = Route.useSearch();
   const { allDecks, activeDeck, activeDeckId, setActiveDeckId, flashcards, deleteDeck, recordCardReview } =
     useStudyDeck("flashcards");
   const navigate = useNavigate();
@@ -193,6 +202,18 @@ function FlashcardsPage() {
   const [score, setScore] = useState({ good: 0, hard: 0, easy: 0, again: 0 });
   const [missedCards, setMissedCards] = useState<Flashcard[]>([]);
   const [activeCardsList, setActiveCardsList] = useState<Flashcard[] | null>(null);
+
+  // Sync active deck if deep-linked via URL query parameter
+  useEffect(() => {
+    if (searchDeckId && searchDeckId !== activeDeckId) {
+      setActiveDeckId(searchDeckId);
+      setIndex(0);
+      setFlipped(false);
+      setScore({ good: 0, hard: 0, easy: 0, again: 0 });
+      setMissedCards([]);
+      setActiveCardsList(null);
+    }
+  }, [searchDeckId, activeDeckId, setActiveDeckId]);
 
   const dueCards = useMemo(() => flashcards.filter(isCardDue), [flashcards]);
 
