@@ -655,3 +655,157 @@ xychart-beta
     line [100, 67.2, 42.1, 18.5, 9.4, 5.8, 4.1]
     line [100, 94.8, 91.5, 89.2, 85.6, 83.9, 82.4]
 ```
+
+---
+
+## 9. SuperMemo-2 Spaced Repetition and Predictive Calendar Scheduler State Machine
+
+### PlantUML
+```plantuml
+@startuml
+skinparam state {
+    BackgroundColor #F8FAFC
+    BorderColor #6366F1
+    ArrowColor #4338CA
+}
+
+[*] --> NewCard : Card Synthesized via LangGraph
+
+state NewCard {
+    NewCard : repetition = 0
+    NewCard : interval_days = 1.0
+    NewCard : ease_factor = 2.50
+    NewCard : next_review_utc = now_utc
+}
+
+NewCard --> ActiveReviewSession : Due in Calendar Matrix
+
+state ActiveReviewSession {
+    ActiveReviewSession : Present Stimulus Front
+    ActiveReviewSession : Tap to Reveal Answer Back
+}
+
+state GradeChoice <<choice>>
+
+ActiveReviewSession --> GradeChoice : User Selects Recall Quality (q)
+
+state LapseState {
+    LapseState : Again (q = 1)
+    LapseState : repetition = 0
+    LapseState : interval = 1.0 day
+    LapseState : lapses = lapses + 1
+    LapseState : EF' = max(1.3, EF - 0.20)
+}
+
+state HardState {
+    HardState : Hard (q = 3)
+    HardState : repetition = repetition + 1
+    HardState : interval = interval * 1.2
+    HardState : EF' = max(1.3, EF - 0.15)
+}
+
+state GoodState {
+    GoodState : Good (q = 4)
+    GoodState : repetition = repetition + 1
+    GoodState : if rep==1 then I=1
+    GoodState : if rep==2 then I=6
+    GoodState : else I = round(I * EF)
+    GoodState : EF' unchanged
+}
+
+state EasyState {
+    EasyState : Easy (q = 5)
+    EasyState : repetition = repetition + 1
+    EasyState : if rep==1 then I=2
+    EasyState : if rep==2 then I=7
+    EasyState : else I = round(I * EF * 1.3)
+    EasyState : EF' = min(3.0, EF + 0.15)
+}
+
+GradeChoice --> LapseState : q < 3 (Again)
+GradeChoice --> HardState : q == 3 (Hard)
+GradeChoice --> GoodState : q == 4 (Good)
+GradeChoice --> EasyState : q == 5 (Easy)
+
+state ScheduleSync {
+    ScheduleSync : next_review_utc = now_utc + interval
+    ScheduleSync : Record User Activity Log
+    ScheduleSync : Increment Daily Streak & Mastery
+}
+
+LapseState --> ScheduleSync
+HardState --> ScheduleSync
+GoodState --> ScheduleSync
+EasyState --> ScheduleSync
+
+ScheduleSync --> 35DayMatrix : Update Rolling Calendar
+ScheduleSync --> [*] : Card Scheduled for Optimal Retrievability
+@enduml
+```
+
+### Mermaid
+```mermaid
+stateDiagram-v2
+    [*] --> NewCard : Synthesized by LangGraph
+    
+    state NewCard {
+        rep : repetition = 0
+        intv : interval = 1.0 day
+        ef : ease_factor = 2.50
+        due : next_review = now_utc
+    }
+
+    NewCard --> ActiveRecallDrill : Filtered by Due Status
+
+    state ActiveRecallDrill {
+        Prompt : Display Question Front
+        Reveal : Tap or Space to Reveal Answer
+    }
+
+    state RatingChoice <<choice>>
+
+    ActiveRecallDrill --> RatingChoice : User Rating Selection
+
+    state "Again (q=1)" as Again {
+        ResetRep : repetition = 0
+        ResetIntv : interval = 1.0 day
+        EaseDrop : EF' = max(1.3, EF - 0.20)
+        IncLapse : lapses += 1
+    }
+
+    state "Hard (q=3)" as Hard {
+        AdvanceRep1 : repetition += 1
+        SmallStep : interval = interval * 1.2
+        SlightEaseDrop : EF' = max(1.3, EF - 0.15)
+    }
+
+    state "Good (q=4)" as Good {
+        AdvanceRep2 : repetition += 1
+        StandardStep : interval = round(interval * EF)
+        StableEase : EF' = EF
+    }
+
+    state "Easy (q=5)" as Easy {
+        AdvanceRep3 : repetition += 1
+        BonusStep : interval = round(interval * EF * 1.3)
+        EaseBonus : EF' = min(3.0, EF + 0.15)
+    }
+
+    RatingChoice --> Again : Rating 1 (Lapse)
+    RatingChoice --> Hard : Rating 2 (Effortful)
+    RatingChoice --> Good : Rating 3 (Successful)
+    RatingChoice --> Easy : Rating 4 (Immediate)
+
+    state SpacedPersistence {
+        ComputeUTC : next_review_utc = now + interval
+        LogActivity : Record User Activity Log
+        RefreshMatrix : Update 35-Day Rolling Calendar
+    }
+
+    Again --> SpacedPersistence
+    Hard --> SpacedPersistence
+    Good --> SpacedPersistence
+    Easy --> SpacedPersistence
+
+    SpacedPersistence --> [*] : Queued for Next Review Point
+```

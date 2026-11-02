@@ -286,16 +286,24 @@ class MongoManager:
                     "$set": {"last_active": now_iso},
                     "$addToSet": {"activity_dates": today_str},
                     "$inc": {"review_count": 1 if "review" in action else 0},
-                }
+                    "$setOnInsert": {
+                        "user_id": user_id,
+                        "username": user_id,
+                        "name": user_id,
+                        "created_at": now_iso,
+                    },
+                },
+                upsert=True,
             )
         else:
-            u = self._mock_storage.get("users", {}).get(user_id)
-            if u:
-                u["last_active"] = now_iso
-                dates = set(u.setdefault("activity_dates", []))
-                dates.add(today_str)
-                u["activity_dates"] = sorted(list(dates))
-                u["review_count"] = u.get("review_count", 0) + (1 if "review" in action else 0)
+            u = self._mock_storage.setdefault("users", {}).setdefault(
+                user_id, {"user_id": user_id, "activity_dates": []}
+            )
+            u["last_active"] = now_iso
+            dates = set(u.setdefault("activity_dates", []))
+            dates.add(today_str)
+            u["activity_dates"] = sorted(list(dates))
+            u["review_count"] = u.get("review_count", 0) + (1 if "review" in action else 0)
 
     def get_user_stats(self, user_id: str) -> Dict[str, Any]:
         """Compute live per-user statistics: study streak, active recall mastery %, and resource counts."""
@@ -367,6 +375,181 @@ class MongoManager:
             "mastered_cards": mastered_cards,
             "total_documents": total_docs,
             "active_recall_label": label,
+        }
+
+    def get_user_spaced_schedule(self, user_id: str) -> Dict[str, Any]:
+        """Compute the user's SuperMemo-2 spaced repetition calendar, due cards, and cognitive tasks."""
+        user = self.get_user(user_id) or {}
+        decks = self.list_decks(user_id)
+        now = datetime.now(timezone.utc)
+        today_date = now.date()
+        today_str = today_date.strftime("%Y-%m-%d")
+
+        # Collect activity dates (dates where reviews occurred)
+        activity_dates = set(user.get("activity_dates", []))
+        if user.get("last_active"):
+            try:
+                la = datetime.fromisoformat(user["last_active"]).date().strftime("%Y-%m-%d")
+                activity_dates.add(la)
+            except Exception:
+                pass
+
+        # Calculate streak
+        stats = self.get_user_stats(user_id)
+        streak_days = stats.get("streak_days", 1)
+
+        # Aggregate due cards and scheduled review dates
+        total_due_count = 0
+        due_by_deck: List[Dict[str, Any]] = []
+        all_cards: List[Dict[str, Any]] = []
+        scheduled_by_date: Dict[str, int] = {}
+        items_by_date: Dict[str, List[Dict[str, Any]]] = {}
+        ease_factors: List[float] = []
+
+        for d in decks:
+            cards = d.get("flashcards", [])
+            deck_due = 0
+            for c in cards:
+                all_cards.append(c)
+                ef = float(c.get("ease_factor", 2.5))
+                ease_factors.append(ef)
+
+                next_utc_str = c.get("next_review_utc")
+                is_due = False
+                if not next_utc_str:
+                    is_due = True
+                    target_date_str = today_str
+                else:
+                    try:
+                        c_date = datetime.fromisoformat(next_utc_str).date()
+                        target_date_str = c_date.strftime("%Y-%m-%d")
+                        if c_date <= today_date:
+                            is_due = True
+                    except Exception:
+                        is_due = True
+                        target_date_str = today_str
+
+                if is_due:
+                    deck_due += 1
+                    total_due_count += 1
+
+                scheduled_by_date[target_date_str] = scheduled_by_date.get(target_date_str, 0) + 1
+
+                card_item = {
+                    "card_id": c.get("id"),
+                    "deck_id": d.get("deck_id"),
+                    "deck_title": d.get("title", "Untitled Deck"),
+                    "deck_color": d.get("color", "indigo"),
+                    "front": c.get("front", ""),
+                    "back": c.get("back", ""),
+                    "interval_days": round(float(c.get("interval_days", 1.0)), 1),
+                    "ease_factor": round(float(c.get("ease_factor", 2.5)), 2),
+                    "repetition": int(c.get("repetition", 0)),
+                    "lapses": int(c.get("lapses", 0)),
+                    "is_due": is_due,
+                    "next_review_utc": next_utc_str,
+                }
+                items_by_date.setdefault(target_date_str, []).append(card_item)
+
+            if len(cards) > 0:
+                due_by_deck.append({
+                    "deck_id": d.get("deck_id"),
+                    "title": d.get("title", "Untitled Deck"),
+                    "color": d.get("color", "indigo"),
+                    "total_cards": len(cards),
+                    "due_count": deck_due,
+                })
+
+        # Generate a rolling 35-day calendar window (last 14 days + today + next 20 days)
+        calendar_days = []
+        start_day = today_date - timedelta(days=14)
+        for offset in range(35):
+            day_obj = start_day + timedelta(days=offset)
+            d_str = day_obj.strftime("%Y-%m-%d")
+            is_today = (day_obj == today_date)
+            is_past = (day_obj < today_date)
+            scheduled_count = scheduled_by_date.get(d_str, 0)
+            day_items = items_by_date.get(d_str, [])
+
+            # Determine day status
+            if is_today:
+                status = "due" if (total_due_count > 0 or scheduled_count > 0) else "completed"
+            elif is_past:
+                status = "completed" if d_str in activity_dates else "rest"
+            else:
+                status = "scheduled" if scheduled_count > 0 else "rest"
+
+            calendar_days.append({
+                "date": d_str,
+                "day_number": day_obj.day,
+                "weekday": day_obj.strftime("%a"),
+                "is_today": is_today,
+                "is_past": is_past,
+                "reviewed": d_str in activity_dates,
+                "scheduled_count": scheduled_count,
+                "status": status,
+                "items": day_items,
+                "decks_involved": list(dict.fromkeys(it["deck_title"] for it in day_items)),
+            })
+
+        avg_ef = round(sum(ease_factors) / len(ease_factors), 2) if ease_factors else 2.5
+        retrievability_estimate = min(98, max(65, round(85 + (avg_ef - 2.5) * 10)))
+
+        # Recommended Daily Cognitive Tasks
+        recommended_tasks = [
+            {
+                "id": "task_srs_review",
+                "title": f"SM-2 Spaced Retrieval: {total_due_count} Card{'s' if total_due_count != 1 else ''} Due",
+                "category": "SuperMemo-2 Spaced Practice",
+                "citation": "Wozniak & Gorzelańczyk (1994); Cepeda et al. (2006)",
+                "description": f"Retrieve concepts from memory at the optimal decay point to maximize synaptic consolidation.",
+                "action_type": "flashcards",
+                "action_label": "Start Review",
+                "completed": total_due_count == 0 and len(all_cards) > 0,
+                "count": total_due_count,
+            },
+            {
+                "id": "task_blurt_arena",
+                "title": "3-Minute Free-Recall Blurt Sprint",
+                "category": "Free-Recall Retrieval Practice",
+                "citation": "Karpicke & Blunt (2011, Science)",
+                "description": "Perform an uninterrupted free-recall dump on your latest deck to identify critical omissions and knowledge voids.",
+                "action_type": "blurt",
+                "action_label": "Enter Blurt Arena",
+                "completed": False,
+            },
+            {
+                "id": "task_feynman_check",
+                "title": "Socratic Feynman Explanation",
+                "category": "Elaborative Learning by Teaching",
+                "citation": "Chi et al. (1994); Fiorella & Mayer (2013)",
+                "description": "Teach a complex mechanism to Richard Feynman in plain language. Graded by real-time Flesch Reading Ease NLP.",
+                "action_type": "feynman",
+                "action_label": "Open Feynman Tutor",
+                "completed": False,
+            },
+            {
+                "id": "task_diagnostic_quiz",
+                "title": "Diagnostic Retrieval Quiz Drill",
+                "category": "Multiple-Choice Retrieval Testing",
+                "citation": "Roediger & Karpicke (2006)",
+                "description": "Engage in active diagnostic testing with instant conceptual feedback to prevent recognition illusions.",
+                "action_type": "quiz",
+                "action_label": "Take Quiz Drill",
+                "completed": False,
+            },
+        ]
+
+        return {
+            "user_id": user_id,
+            "streak_days": streak_days,
+            "total_cards": len(all_cards),
+            "total_due_today": total_due_count,
+            "average_ease_factor": avg_ef,
+            "retrievability_estimate": retrievability_estimate,
+            "due_by_deck": due_by_deck,
+            "calendar_days": calendar_days,
+            "recommended_tasks": recommended_tasks,
         }
 
     # =========================================================================
@@ -700,12 +883,19 @@ class MongoManager:
         if not deck:
             return None
         card_id = card_data.get("id") or f"fc_{uuid.uuid4().hex[:8]}"
+        now_iso = datetime.now(timezone.utc).isoformat()
         card_item = {
             "id": card_id,
             "front": card_data.get("front", "").strip(),
             "back": card_data.get("back", "").strip(),
             "mastery": card_data.get("mastery", 0),
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "repetition": int(card_data.get("repetition", 0)),
+            "interval_days": float(card_data.get("interval_days", 1.0)),
+            "ease_factor": float(card_data.get("ease_factor", 2.5)),
+            "lapses": int(card_data.get("lapses", 0)),
+            "review_count": int(card_data.get("review_count", 0)),
+            "next_review_utc": card_data.get("next_review_utc") or now_iso,
+            "created_at": now_iso,
         }
         deck["flashcards"].append(card_item)
         deck["cards_count"] = len(deck["flashcards"])

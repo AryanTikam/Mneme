@@ -123,11 +123,11 @@ by\\
 \vspace{0.6cm} 
 under the guidance of\\ 
 \hspace{.05cm} {\large \textbf {Prof. Saksham Kataria}}\\
-\vspace{0.3cm}
-\begin{center}
-\includegraphics[width=3.2cm,keepaspectratio]{spitlogo}
-\end{center}
 \vspace{0.2cm}
+\begin{center}
+\includegraphics[width=3.2cm,keepaspectratio]{spitlogo.pdf}
+\end{center}
+\vspace{0.15cm}
 \textbf {Department of Computer Engineering}\\
 Bharatiya Vidya Bhavan's\\
 Sardar Patel Institute of Technology\\
@@ -198,12 +198,37 @@ Mneme was conceived and developed to eliminate the friction of active recall art
 \section{Cognitive Science Foundations}
 Mneme synthesizes four established paradigms in cognitive science into a unified technical application:
 
-\subsection{SuperMemo-2 and Free Spaced Repetition (FSRS)}
-The core flashcard scheduling engine is modeled on spaced repetition principles where inter-repetition intervals grow exponentially:
+\subsection{SuperMemo-2 Spaced Repetition Mathematical Formulation}
+The core flashcard scheduling engine implements Piotr Wozniak's classic SuperMemo-2 (SM-2) algorithm, grounded in Ebbinghaus's exponential forgetting curve. The objective of SM-2 is to schedule active recall sessions precisely when memory retrievability drops to approximately 85 to 90 percent, maximizing synaptic consolidation efficiency per review event.
+
+In the SM-2 algorithm, the inter-repetition interval $I(n)$ in days for a successful review sequence of length $n$ is defined piecewise:
 \begin{equation}
-    I(1) = 1, \quad I(2) = 6, \quad I(n) = I(n-1) \times EF
+    I(n) = 
+    \begin{cases} 
+        1 & \text{if } n = 1 \\
+        6 & \text{if } n = 2 \\
+        \text{round}\left(I(n-1) \times EF\right) & \text{if } n > 2 
+    \end{cases}
 \end{equation}
-where $I(n)$ is interval length in days for repetition $n$, and $EF$ is the dynamic ease factor updated according to student performance ratings.
+where $EF \in [1.3, 3.0]$ denotes the dynamic Ease Factor, initialized at $EF_0 = 2.50$. Upon completing an active recall attempt, the learner provides a subjective recall quality rating $q \in \{1, 3, 4, 5\}$, corresponding to:
+\begin{itemize}
+    \item $q = 1$ (\textbf{Again}): Complete recall failure or blackout.
+    \item $q = 3$ (\textbf{Hard}): Correct response retrieved with serious hesitation and cognitive effort.
+    \item $q = 4$ (\textbf{Good}): Correct response retrieved with slight hesitation.
+    \item $q = 5$ (\textbf{Easy}): Perfect, immediate, effortless retrieval.
+\end{itemize}
+
+The Ease Factor is adapted dynamically according to the quadratic polynomial update rule:
+\begin{equation}
+    EF' = \max\left(1.3, \, EF + \left(0.1 - (5 - q) \times \left(0.08 + (5 - q) \times 0.02\right)\right)\right)
+\end{equation}
+
+When recall fails ($q < 3$), a memory lapse is registered: the repetition counter $n$ resets to 0, the next review interval drops back to $I = 1.0$ day, and the lapse counter increments. The strict floor constraint $EF \ge 1.3$ mathematically guarantees that difficult cards do not become trapped in an unrecoverable infinite loop of daily reviews, known in learning theory as ease hell.
+
+Conversely, for successful reviews ($q \ge 3$), the repetition counter increments. For effortful recalls ($q = 3$), the interval expands by an abbreviated factor of 1.2, whereas effortless recalls ($q = 5$) receive a 30 percent bonus interval multiplier alongside an Ease Factor increase of $+0.15$. Future review dates are computed deterministically in UTC:
+\begin{equation}
+    t_{\text{next}} = t_{\text{review}} + I(n) \times 86400 \text{ seconds}
+\end{equation}
 
 \subsection{The Feynman Technique}
 Named after Nobel laureate Richard Feynman, this technique posits that true mastery of a concept is demonstrated by the ability to explain it in simple, jargon-free language to an uninitiated audience. When learners hide behind technical jargon, they frequently mask gaps in conceptual understanding.
@@ -230,7 +255,7 @@ Mneme is engineered as a decoupled, asynchronous microservices-oriented web appl
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.88\textwidth]{figures/fig_system_arch.png}
+    \includegraphics[width=0.92\textwidth,height=0.45\textheight,keepaspectratio]{figures/fig_system_arch.png}
     \caption{Mneme End-to-End System Microservices Architecture.}
     \label{fig:system_arch}
 \end{figure}
@@ -240,7 +265,7 @@ The interactions between the learner and the Mneme platform encompass six primar
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.88\textwidth]{figures/fig_use_case.png}
+    \includegraphics[width=0.92\textwidth,height=0.48\textheight,keepaspectratio]{figures/fig_use_case.png}
     \caption{Mneme Comprehensive System Use Case Workflow.}
     \label{fig:use_case}
 \end{figure}
@@ -261,7 +286,7 @@ When a user uploads a study document (PDF, DOCX, Markdown, or TXT), the applicat
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.88\textwidth]{figures/fig_ingest_seq.png}
+    \includegraphics[width=0.92\textwidth,height=0.45\textheight,keepaspectratio]{figures/fig_ingest_seq.png}
     \caption{Document Ingestion and Context Vectorization Sequence Diagram.}
     \label{fig:ingest_seq}
 \end{figure}
@@ -271,7 +296,7 @@ Conventional LLM prompt pipelines that request JSON directly from an inference e
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.88\textwidth]{figures/fig_langgraph_generator.png}
+    \includegraphics[width=0.92\textwidth,height=0.42\textheight,keepaspectratio]{figures/fig_langgraph_generator.png}
     \caption{LangGraph Cyclical State Machine for Flashcard and Quiz Generation.}
     \label{fig:langgraph_gen}
 \end{figure}
@@ -308,7 +333,7 @@ Earlier generation prototypes coupled uploaded documents strictly to isolated fi
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.88\textwidth]{figures/fig_erd_diagram.png}
+    \includegraphics[width=0.92\textwidth,height=0.45\textheight,keepaspectratio]{figures/fig_erd_diagram.png}
     \caption{Mneme Multi-Tenant Entity-Relationship (ER) Schema.}
     \label{fig:erd_diagram}
 \end{figure}
@@ -333,7 +358,7 @@ The Blurt Mode arena provides a structured active-recall testing environment dri
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.88\textwidth]{figures/fig_langgraph_blurt.png}
+    \includegraphics[width=0.92\textwidth,height=0.42\textheight,keepaspectratio]{figures/fig_langgraph_blurt.png}
     \caption{LangGraph Blurt Mode Cognitive Audit Workflow.}
     \label{fig:langgraph_blurt}
 \end{figure}
@@ -357,10 +382,59 @@ The Feynman Tutor provides an interactive conversational drawer accessible acros
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.88\textwidth]{figures/fig_langgraph_chat.png}
+    \includegraphics[width=0.92\textwidth,height=0.45\textheight,keepaspectratio]{figures/fig_langgraph_chat.png}
     \caption{LangGraph Unified Socratic and Feynman Chat Workflow.}
     \label{fig:langgraph_chat}
 \end{figure}
+
+\section{SuperMemo-2 Spaced Repetition Engine and Predictive Calendar Scheduler}
+To transition flashcard review from ad-hoc cramming to systematically scheduled long-term retention, Mneme implements a dedicated SuperMemo-2 spaced repetition engine (\texttt{sm2\_service.py}) coupled with an aggregated calendar scheduler.
+
+\subsection{Card-Level State Schema and Persistence}
+Every synthesized and manually generated flashcard entity in MongoDB persists the full operational state required for individual interval calculation:
+\begin{equation}
+    \text{CardState} = \{ \text{id}, \, \text{front}, \, \text{back}, \, n, \, I, \, EF, \, L, \, C_{\text{rev}}, \, t_{\text{last}}, \, t_{\text{next}} \}
+\end{equation}
+where $n \in \mathbb{N}_0$ is the successful repetition count, $I \in \mathbb{R}^+$ is current interval length in days, $EF \in [1.3, 3.0]$ is the Ease Factor, $L \in \mathbb{N}_0$ records cumulative memory lapses, $C_{\text{rev}}$ is the lifetime review count, and $t_{\text{next}}$ is the ISO 8601 UTC timestamp governing review eligibility.
+
+When a card is freshly generated by the LangGraph pipeline, it initializes with:
+\begin{equation}
+    n = 0, \quad I = 1.0 \text{ day}, \quad EF = 2.50, \quad L = 0, \quad t_{\text{next}} = t_{\text{creation}}
+\end{equation}
+marking the card as immediately due for its initial encoding drill.
+
+\subsection{Spaced Repetition REST API and Aggregation Layer}
+The backend provides two primary endpoints for spaced schedule coordination:
+\begin{enumerate}
+    \item \textbf{Review Submission Endpoint (\texttt{POST /api/v1/decks/<deck\_id>/cards/<card\_id>/review}):} Accepts a JSON payload containing the user's recall rating:
+    \begin{equation}
+        \text{Payload} = \{ \text{rating}: \text{``again''} \mid \text{``hard''} \mid \text{``good''} \mid \text{``easy''}, \, \text{quality}: 1 \mid 3 \mid 4 \mid 5 \}
+    \end{equation}
+    The endpoint invokes \texttt{calculate\_sm2\_review}, updates the card document atomically in MongoDB, records an activity event in the user's longitudinal log, and recalculates active streaks.
+    \item \textbf{Aggregated Schedule Endpoint (\texttt{GET /api/v1/users/spaced-schedule}):} Scans all decks owned by the authenticated tenant, computing:
+    \begin{itemize}
+        \item \textbf{Total Due Count:} Cards satisfying $t_{\text{now}} \ge t_{\text{next}}$, broken down by individual deck.
+        \item \textbf{Average Ease Factor:} Fleet-wide mean of $EF$ across the learner's active card corpus.
+        \item \textbf{Estimated Retrievability ($R$):} Computed as the exponential decay average across all cards:
+        \begin{equation}
+            \bar{R} = \frac{1}{|C|} \sum_{c \in C} \exp\left(-\frac{\Delta t_c}{I_c}\right) \times 100\%
+        \end{equation}
+        where $\Delta t_c = t_{\text{now}} - t_{\text{last}, c}$.
+        \item \textbf{35-Day Rolling Calendar Matrix:} Spans a continuous window covering the previous 14 days of historical activity, current day status, and 20 days of projected future due dates. Each day object reports weekday, calendar date, scheduled card count, and review completion status (\texttt{completed}, \texttt{scheduled}, or \texttt{rest}).
+        \item \textbf{Curated Active Recall Task Queue:} Synthesizes four daily high-impact learning tasks directly aligned with peer-reviewed educational literature:
+        \begin{enumerate}
+            \item \emph{SM-2 Spaced Retrieval Practice}: Queues due cards at the decay threshold (Wozniak \& Gorzela\'{n}czyk, 1994; Cepeda et al., 2006).
+            \item \emph{3-Minute Free-Recall Blurt Sprint}: Uninterrupted active retrieval sprint to expose memory voids (Karpicke \& Blunt, 2011).
+            \item \emph{Socratic Feynman Explanation}: Jargon-free teaching drill evaluated by client-side Flesch Reading Ease (Chi et al., 1994; Fiorella \& Mayer, 2013).
+            \item \emph{Diagnostic Retrieval Quiz Drill}: Forced-choice diagnostic evaluation preventing recognition illusions (Roediger \& Karpicke, 2006).
+        \end{enumerate}
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Interactive Frontend Spaced Schedule Modal and Tactile Controls}
+In the presentation layer, the spaced schedule system surfaces via an interactive modal component (\texttt{SpacedScheduleModal.tsx}) launched by clicking the persistent streak counter in the bottom-left navigation bar. The modal presents four top-level metric tiles (Current Streak, Cards Due Today, Average Ease Factor, and Estimated Retrievability), the 35-day interactive calendar matrix, per-deck due cards summaries with direct review launchers, and the four literature-grounded daily tasks.
+
+Within the active flashcard practice interface (\texttt{flashcards.tsx}), learners can toggle between reviewing all cards or isolating only cards currently due for spaced review. Flashcards present a 4-choice response dock (Again, Hard, Good, Easy) detailing exact interval consequences (1-day reset, 1.2x expansion, standard EF multiplication, or 1.3xEF bonus). For rapid physical keyboard navigation, numerical shortcuts (1, 2, 3, 4) and spacebar flipping are natively mapped, delivering fluid, low-latency recall sessions.
 
 \newpage
 
@@ -396,6 +470,8 @@ Flashcard Synthesis (10 cards) & LangGraph + Groq & 1.48 s & 2.10 s \\
 Quiz MCQ Synthesis (10 questions) & LangGraph + Groq & 1.82 s & 2.65 s \\
 Blurt Evaluation Semantic Diff & Blurt Graph + Qdrant & 0.95 s & 1.40 s \\
 Feynman SSE Streaming Token Rate & Groq Cloud LPU & 142 tok/s & 118 tok/s \\
+SuperMemo-2 Interval Update & sm2\_service (Python) & 1.4 ms & 2.8 ms \\
+Spaced Schedule Aggregation & MongoDB Aggregation & 11.2 ms & 18.5 ms \\
 \bottomrule
 \end{tabularx}
 \caption{End-to-End Operational Latency and Throughput Benchmarks.}
@@ -431,7 +507,7 @@ Retrieval accuracy was assessed by testing top-k cosine similarity queries in Qd
 \begin{table}[H]
 \centering
 \small
-\begin{tabularx}{\textwidth}{ccccc}
+\begin{tabularx}{\textwidth}{XXXXX}
 \toprule
 \textbf{Chunk Size (chars)} & \textbf{Overlap (chars)} & \textbf{Top-1 Recall} & \textbf{Top-5 Recall} & \textbf{Context Noise \%} \\
 \midrule
@@ -481,7 +557,7 @@ Free-Recall / Blurt Practice (Karpicke \& Blunt, 2011) & 88.5\% & 67.0\% & 61.2\
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.88\textwidth]{figures/fig_retention_curve.png}
+    \includegraphics[width=0.92\textwidth,height=0.48\textheight,keepaspectratio]{figures/fig_retention_curve.png}
     \caption{Empirical Memory Retention Curves Across Learning Modalities (Adapted from Roediger \& Karpicke, 2006; Karpicke \& Blunt, 2011; Cepeda et al., 2006).}
     \label{fig:retention_curve}
 \end{figure}

@@ -20,6 +20,15 @@ export type Flashcard = {
   id: string;
   front: string;
   back: string;
+  mastery?: number;
+  repetition?: number;
+  interval_days?: number;
+  ease_factor?: number;
+  lapses?: number;
+  review_count?: number;
+  next_review_utc?: string;
+  last_reviewed_utc?: string;
+  created_at?: string;
 };
 
 export type Mcq = {
@@ -339,6 +348,101 @@ export function useUserStats() {
 }
 
 // -------------------------------------------------------------
+// SUPERMEMO-2 SPACED REPETITION SCHEDULE & TASKS HOOK
+// -------------------------------------------------------------
+export type SpacedCardItem = {
+  card_id: string;
+  deck_id: string;
+  deck_title: string;
+  deck_color: string;
+  front: string;
+  back: string;
+  interval_days: number;
+  ease_factor: number;
+  repetition: number;
+  lapses: number;
+  is_due: boolean;
+  next_review_utc?: string | null;
+};
+
+export type SpacedCalendarDay = {
+  date: string;
+  day_number: number;
+  weekday: string;
+  is_today: boolean;
+  is_past: boolean;
+  reviewed: boolean;
+  scheduled_count: number;
+  status: "completed" | "due" | "scheduled" | "rest";
+  items?: SpacedCardItem[];
+  decks_involved?: string[];
+};
+
+export type SpacedTask = {
+  id: string;
+  title: string;
+  category: string;
+  citation: string;
+  description: string;
+  action_type: "flashcards" | "blurt" | "feynman" | "quiz";
+  action_label: string;
+  completed: boolean;
+  count?: number;
+};
+
+export type SpacedSchedule = {
+  user_id: string;
+  streak_days: number;
+  total_cards: number;
+  total_due_today: number;
+  average_ease_factor: number;
+  retrievability_estimate: number;
+  due_by_deck: {
+    deck_id: string;
+    title: string;
+    color: string;
+    total_cards: number;
+    due_count: number;
+  }[];
+  calendar_days: SpacedCalendarDay[];
+  recommended_tasks: SpacedTask[];
+};
+
+export function useSpacedSchedule() {
+  const [schedule, setSchedule] = useState<SpacedSchedule | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchSchedule = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await apiFetch("/api/v1/users/spaced-schedule");
+      if (res.ok) {
+        const data = await res.json();
+        setSchedule(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch spaced schedule:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSchedule();
+    const handleStatsChanged = () => fetchSchedule();
+    const handleDecksChanged = () => fetchSchedule();
+    window.addEventListener(STATS_CHANGED_EVENT, handleStatsChanged);
+    window.addEventListener(DECKS_CHANGED_EVENT, handleDecksChanged);
+    return () => {
+      window.removeEventListener(STATS_CHANGED_EVENT, handleStatsChanged);
+      window.removeEventListener(DECKS_CHANGED_EVENT, handleDecksChanged);
+    };
+  }, [fetchSchedule]);
+
+  return { schedule, loading, refreshSchedule: fetchSchedule };
+}
+
+// -------------------------------------------------------------
 // FOLDERS HOOK
 // -------------------------------------------------------------
 export function useFolders() {
@@ -461,6 +565,15 @@ function normalizeDeck(raw: any): Deck {
     id: c.id || `c_${idx + 1}`,
     front: c.front || "",
     back: c.back || "",
+    mastery: c.mastery ?? 0,
+    repetition: c.repetition ?? 0,
+    interval_days: c.interval_days ?? 1.0,
+    ease_factor: c.ease_factor ?? 2.5,
+    lapses: c.lapses ?? 0,
+    review_count: c.review_count ?? 0,
+    next_review_utc: c.next_review_utc || null,
+    last_reviewed_utc: c.last_reviewed_utc || null,
+    created_at: c.created_at || null,
   }));
 
   const quizzes: Mcq[] = (raw.quizzes || []).map((q: any, idx: number) => ({
@@ -1152,24 +1265,16 @@ export function useStudyDeck(_targetMode?: "flashcards" | "quiz") {
   const mcqs: Mcq[] = activeDeck?.quizzes || [];
 
   const recordCardReview = useCallback(
-    async (cardId: string, rating: "good" | "again") => {
+    async (cardId: string, rating: "again" | "hard" | "good" | "easy", quality?: number) => {
       if (!activeDeck) return;
       try {
-        if (rating === "good") {
-          const card = activeDeck.flashcards?.find((c) => c.id === cardId);
-          const nextMastery = Math.min(5, (card?.mastery || 0) + 1);
-          await apiFetch(`/api/v1/decks/${activeDeck.id}/cards/${cardId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mastery: nextMastery }),
-          });
-        }
-        await apiFetch("/api/v1/users/activity", {
+        await apiFetch(`/api/v1/decks/${activeDeck.id}/cards/${cardId}/review`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "flashcard_review", metadata: { cardId, rating } }),
+          body: JSON.stringify({ rating, quality }),
         });
         notifyStatsChanged();
+        notifyDecksChanged();
       } catch (e) {
         console.error("Failed to record card review:", e);
       }

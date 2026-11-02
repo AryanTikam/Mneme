@@ -2,6 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Brain,
+  Calendar as CalendarIcon,
   Layers,
   LayoutDashboard,
   ListChecks,
@@ -10,11 +11,12 @@ import {
   PenLine,
   X,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useAuth, useUserStats } from "@/services/mneme";
 import { ChatDrawer } from "./ChatDrawer";
 import { LoginPage } from "./LoginPage";
 import { UserMenu } from "./UserMenu";
+import { SpacedScheduleModal } from "./SpacedScheduleModal";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -29,6 +31,23 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { stats } = useUserStats();
   const [chatOpen, setChatOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const handleOpenTutor = () => setChatOpen(true);
+    window.addEventListener("mneme:open_tutor", handleOpenTutor);
+    return () => window.removeEventListener("mneme:open_tutor", handleOpenTutor);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-background font-sans text-foreground flex items-center justify-center">
+        <div className="h-7 w-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
 
   // If user is not logged in, show Login / Register screen
   if (!currentUser) {
@@ -138,15 +157,28 @@ export function AppShell({ children }: { children: ReactNode }) {
               </nav>
 
               {/* Real User Stats (Mobile) */}
-              <div className="mt-auto rounded-2xl bg-secondary/80 p-4 border border-border/40">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setScheduleOpen(true);
+                }}
+                className="mt-auto rounded-2xl bg-secondary/80 p-4 border border-border/40 cursor-pointer transition hover:bg-secondary hover:shadow-soft active:scale-[0.99] group"
+                title="Click to view SuperMemo-2 Spaced Repetition Calendar & Daily Tasks"
+              >
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-secondary-foreground">Daily streak</p>
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                  <p className="text-xs font-semibold text-secondary-foreground flex items-center gap-1.5">
+                    <span>Daily streak</span>
+                    <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition" />
+                  </p>
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary group-hover:bg-primary group-hover:text-primary-foreground transition">
                     {stats.mastery_percentage}% Mastery
                   </span>
                 </div>
-                <p className="font-display text-2xl font-bold text-secondary-foreground mt-0.5">
-                  {stats.streak_days} {stats.streak_days === 1 ? "day" : "days"}
+                <p className="font-display text-2xl font-bold text-secondary-foreground mt-0.5 flex items-center justify-between">
+                  <span>{stats.streak_days} {stats.streak_days === 1 ? "day" : "days"}</span>
+                  <span className="text-[10px] font-semibold text-primary">View Schedule &rarr;</span>
                 </p>
                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                   <div
@@ -210,15 +242,25 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         {/* Real User Stats (Desktop) */}
-        <div className="mt-auto rounded-3xl bg-secondary/80 p-4 border border-border/40">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setScheduleOpen(true)}
+          className="mt-auto rounded-3xl bg-secondary/80 p-4 border border-border/40 cursor-pointer transition hover:bg-secondary hover:shadow-soft active:scale-[0.99] group"
+          title="Click to view SuperMemo-2 Spaced Repetition Calendar & Daily Tasks"
+        >
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-secondary-foreground">Daily streak</p>
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+            <p className="text-xs font-semibold text-secondary-foreground flex items-center gap-1.5">
+              <span>Daily streak</span>
+              <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition" />
+            </p>
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary group-hover:bg-primary group-hover:text-primary-foreground transition">
               {stats.mastery_percentage}% Mastery
             </span>
           </div>
-          <p className="font-display text-2xl font-bold text-secondary-foreground mt-0.5">
-            {stats.streak_days} {stats.streak_days === 1 ? "day" : "days"}
+          <p className="font-display text-2xl font-bold text-secondary-foreground mt-0.5 flex items-center justify-between">
+            <span>{stats.streak_days} {stats.streak_days === 1 ? "day" : "days"}</span>
+            <span className="text-[10px] font-semibold text-primary opacity-0 group-hover:opacity-100 transition">View Schedule &rarr;</span>
           </p>
           <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
             <div
@@ -277,6 +319,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </motion.button>
 
       <ChatDrawer open={chatOpen} onOpenChange={setChatOpen} />
+      <SpacedScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
     </div>
   );
 }

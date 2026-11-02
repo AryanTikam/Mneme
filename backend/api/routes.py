@@ -30,6 +30,7 @@ from services.database import mongo_manager
 from services.embedding_service import embedding_service
 from services.llm_service import get_llm_service
 from services.qdrant_service import qdrant_service
+from services.sm2_service import calculate_sm2_review
 from tasks.celery_tasks import (
     execute_generate_deck,
     execute_ingest,
@@ -543,6 +544,14 @@ def get_user_stats() -> Response:
     return jsonify(stats)
 
 
+@api_bp.route("/users/spaced-schedule", methods=["GET"])
+def get_user_spaced_schedule() -> Response:
+    """Retrieve SuperMemo-2 (SM-2) spaced repetition calendar, due cards, and cognitive tasks."""
+    user_id = _get_request_user_id()
+    schedule = mongo_manager.get_user_spaced_schedule(user_id)
+    return jsonify(schedule)
+
+
 @api_bp.route("/users/activity", methods=["POST"])
 def record_user_activity() -> Response:
     """Record an active study session or recall interaction for current user."""
@@ -742,6 +751,53 @@ def update_card_in_deck(deck_id: str, card_id: str) -> Response:
         return jsonify({"error": "Card or deck not found"}), 404
     updated_deck = mongo_manager.get_deck(deck_id, user_id)
     return jsonify({"card": card, "deck": updated_deck})
+
+
+@api_bp.route("/decks/<deck_id>/cards/<card_id>/review", methods=["POST"])
+def review_card_in_deck(deck_id: str, card_id: str) -> Response:
+    """Record a SuperMemo-2 (SM-2) active recall review for a card."""
+    user_id = _get_request_user_id()
+    data = request.get_json(silent=True) or {}
+    rating = data.get("rating", "good")
+    quality = data.get("quality")
+
+    deck = mongo_manager.get_deck(deck_id, user_id)
+    if not deck:
+        return jsonify({"error": "Deck not found"}), 404
+
+    target_card = None
+    for c in deck.get("flashcards", []):
+        if c.get("id") == card_id:
+            target_card = c
+            break
+
+    if not target_card:
+        return jsonify({"error": "Card not found"}), 404
+
+    # Calculate SM-2 update
+    sm2_updates = calculate_sm2_review(target_card, rating=rating, quality=quality)
+    updated_card = mongo_manager.update_card(deck_id, user_id, card_id, sm2_updates)
+
+    # Record user study activity for streak & retention logging
+    mongo_manager.record_user_activity(
+        user_id,
+        action="flashcard_review",
+        metadata={
+            "deck_id": deck_id,
+            "card_id": card_id,
+            "rating": rating,
+            "interval_days": sm2_updates.get("interval_days"),
+            "ease_factor": sm2_updates.get("ease_factor"),
+            "repetition": sm2_updates.get("repetition"),
+        },
+    )
+
+    updated_deck = mongo_manager.get_deck(deck_id, user_id)
+    return jsonify({
+        "card": updated_card,
+        "sm2": sm2_updates,
+        "deck": updated_deck,
+    })
 
 
 @api_bp.route("/decks/<deck_id>/cards/<card_id>", methods=["DELETE"])

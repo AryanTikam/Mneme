@@ -248,13 +248,20 @@ def execute_generate_deck(
             "is_valid": False,
         })
         cards_raw = (fc_state.get("parsed_output") or {}).get("cards", [])
+        now_iso = datetime.now(timezone.utc).isoformat()
         for c in cards_raw:
             cards.append({
                 "id": c.get("id") or f"fc_{uuid.uuid4().hex[:8]}",
                 "front": c.get("front", ""),
                 "back": c.get("back", ""),
                 "mastery": 0,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "repetition": 0,
+                "interval_days": 1.0,
+                "ease_factor": 2.5,
+                "lapses": 0,
+                "review_count": 0,
+                "next_review_utc": now_iso,
+                "created_at": now_iso,
             })
 
     # 2. Generate quiz questions if requested

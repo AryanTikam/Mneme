@@ -334,4 +334,60 @@ def test_upload_context_directly_to_deck():
     client.delete(f"/api/v1/documents/{doc_id}", headers=headers)
 
 
+def test_sm2_card_review_and_spaced_schedule():
+    """Verify SuperMemo-2 card review updates ease factor/interval and populates spaced schedule."""
+    app = create_app()
+    client = app.test_client()
+    user_id = "test_user_sm2"
+    headers = {"X-User-Id": user_id}
+
+    # 1. Create a deck
+    create_res = client.post(
+        "/api/v1/decks",
+        data=json.dumps({"title": "SM-2 Cognitive Science Deck"}),
+        content_type="application/json",
+        headers=headers,
+    )
+    assert create_res.status_code == 201
+    deck_id = create_res.get_json()["deck"]["id"]
+
+    # 2. Add a flashcard
+    add_card_res = client.post(
+        f"/api/v1/decks/{deck_id}/cards",
+        data=json.dumps({"front": "What is the Ebbinghaus forgetting curve formula?", "back": "R(t) = exp(-t/S)"}),
+        content_type="application/json",
+        headers=headers,
+    )
+    assert add_card_res.status_code == 201
+    card_id = add_card_res.get_json()["card"]["id"]
+
+    # 3. Perform a 'good' SM-2 review
+    review_res = client.post(
+        f"/api/v1/decks/{deck_id}/cards/{card_id}/review",
+        data=json.dumps({"rating": "good", "quality": 4}),
+        content_type="application/json",
+        headers=headers,
+    )
+    assert review_res.status_code == 200
+    review_data = review_res.get_json()
+    assert "sm2" in review_data
+    assert review_data["sm2"]["repetition"] == 1
+    assert review_data["sm2"]["interval_days"] >= 1.0
+    assert review_data["sm2"]["ease_factor"] >= 1.3
+    assert "next_review_utc" in review_data["sm2"]
+
+    # 4. Fetch user's spaced schedule
+    schedule_res = client.get("/api/v1/users/spaced-schedule", headers=headers)
+    assert schedule_res.status_code == 200
+    sched_data = schedule_res.get_json()
+    assert "calendar_days" in sched_data
+    assert "recommended_tasks" in sched_data
+    assert sched_data["streak_days"] >= 1
+    assert len(sched_data["recommended_tasks"]) >= 4
+
+    # Clean up
+    client.delete(f"/api/v1/decks/{deck_id}", headers=headers)
+
+
+
 
