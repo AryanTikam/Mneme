@@ -108,8 +108,8 @@ export const FOLDER_COLORS = [
   { label: "Sky", value: "sky", bg: "bg-sky-500/10 text-sky-500 border-sky-500/30", dot: "bg-sky-500" },
 ];
 
-export function getFolderColor(colorKey?: string) {
-  return FOLDER_COLORS.find((c) => c.value === colorKey) || FOLDER_COLORS[0];
+export function getFolderColor(colorKey?: string): (typeof FOLDER_COLORS)[number] {
+  return FOLDER_COLORS.find((c) => c.value === colorKey) ?? FOLDER_COLORS[0]!;
 }
 
 function getStoredJson<T>(key: string, fallback: T): T {

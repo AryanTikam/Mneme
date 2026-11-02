@@ -26,7 +26,10 @@ import {
 
 function formatDateLong(dateStr: string): string {
   try {
-    const [y, m, d] = dateStr.split("-").map(Number);
+    const parts = dateStr.split("-").map(Number);
+    const y = parts[0] ?? 2026;
+    const m = parts[1] ?? 1;
+    const d = parts[2] ?? 1;
     const date = new Date(y, m - 1, d);
     return date.toLocaleDateString("en-US", {
       weekday: "long",

@@ -205,7 +205,7 @@ function Dashboard() {
                     if (createdDeckId) {
                       setManagingDeckId(createdDeckId);
                       setActiveDeckId(createdDeckId);
-                    } else if (decks.length > 0) {
+                    } else if (decks.length > 0 && decks[0]) {
                       setManagingDeckId(decks[0].id);
                       setActiveDeckId(decks[0].id);
                     }
@@ -447,7 +447,7 @@ function Dashboard() {
                       {d.flashcards?.length || 0} Cards
                     </span>
                     <span className="flex items-center gap-1 font-medium">
-                      <HelpCircle className="h-3.5 w-3.5 text-accent" />
+                      <HelpCircle className="h-3.5 w-3.5 text-primary" />
                       {d.quizzes?.length || 0} Questions
                     </span>
                     {(d.document_ids?.length ?? (d.document_id ? 1 : 0)) > 0 && (

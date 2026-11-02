@@ -6,6 +6,8 @@ import {
   Brain,
   CheckCircle2,
   Clock,
+  FileText,
+  HelpCircle,
   Layers,
   Play,
   RotateCcw,
@@ -92,7 +94,7 @@ function BlurtPage() {
 
   // Set default deck on load or when decks change
   useEffect(() => {
-    if (!selectedDeckId && decks.length > 0) {
+    if (!selectedDeckId && decks.length > 0 && decks[0]) {
       setSelectedDeckId(activeDeckId || decks[0].id);
     }
   }, [decks, activeDeckId, selectedDeckId]);
@@ -265,15 +267,20 @@ function BlurtPage() {
                           {deck.title}
                         </span>
                       </div>
-                      <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                        <span>{deck.flashcards?.length || 0} cards</span>
-                        <span>•</span>
-                        <span>{deck.quizzes?.length || 0} quizzes</span>
+                      <div className="mt-2.5 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1 font-medium">
+                          <Layers className="h-3.5 w-3.5 text-primary" />
+                          {deck.flashcards?.length || 0} Cards
+                        </span>
+                        <span className="flex items-center gap-1 font-medium">
+                          <HelpCircle className="h-3.5 w-3.5 text-primary" />
+                          {deck.quizzes?.length || 0} Questions
+                        </span>
                         {docCount > 0 && (
-                          <>
-                            <span>•</span>
-                            <span className="text-accent font-semibold">{docCount} context{docCount > 1 ? "s" : ""}</span>
-                          </>
+                          <span className="flex items-center gap-1 font-medium text-foreground/80">
+                            <FileText className="h-3.5 w-3.5 text-primary" />
+                            {docCount} Context{docCount > 1 ? "s" : ""}
+                          </span>
                         )}
                       </div>
                     </button>
