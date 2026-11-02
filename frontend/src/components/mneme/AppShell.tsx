@@ -32,22 +32,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [chatOpen, setChatOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     const handleOpenTutor = () => setChatOpen(true);
     window.addEventListener("mneme:open_tutor", handleOpenTutor);
     return () => window.removeEventListener("mneme:open_tutor", handleOpenTutor);
   }, []);
-
-  if (!mounted) {
-    return (
-      <div className="min-h-screen bg-background font-sans text-foreground flex items-center justify-center">
-        <div className="h-7 w-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
-  }
 
   // If user is not logged in, show Login / Register screen
   if (!currentUser) {
