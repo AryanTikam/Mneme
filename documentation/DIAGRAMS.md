@@ -658,7 +658,7 @@ xychart-beta
 
 ---
 
-## 9. SuperMemo-2 Spaced Repetition and Predictive Calendar Scheduler State Machine
+## 9. SuperMemo-2 Spaced Repetition and Predictive Calendar Scheduler State Machine (Figure 5.8)
 
 ### PlantUML
 ```plantuml

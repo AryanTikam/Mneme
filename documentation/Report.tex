@@ -436,6 +436,13 @@ In the presentation layer, the spaced schedule system surfaces via an interactiv
 
 Within the active flashcard practice interface (\texttt{flashcards.tsx}), learners can toggle between reviewing all cards or isolating only cards currently due for spaced review. The route accepts direct deck deep-linking parameters (\texttt{/flashcards?deckId=...}), automatically switching the active study context to the requested deck. Flashcards present a 4-choice response dock (Again, Hard, Good, Easy) detailing exact interval consequences (1-day reset, 1.2x expansion, standard EF multiplication, or 1.3xEF bonus). For rapid physical keyboard navigation, numerical shortcuts (1, 2, 3, 4) and spacebar flipping are natively mapped, delivering fluid, low-latency recall sessions.
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth,height=0.44\textheight,keepaspectratio]{figures/fig_sm2_scheduler.png}
+    \caption{SuperMemo-2 Spaced Repetition Interval and Predictive Calendar Scheduler State Machine.}
+    \label{fig:sm2_scheduler}
+\end{figure}
+
 \newpage
 
 % ===================================================================
