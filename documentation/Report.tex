@@ -406,12 +406,16 @@ marking the card as immediately due for its initial encoding drill.
 \subsection{Spaced Repetition REST API and Aggregation Layer}
 The backend provides two primary endpoints for spaced schedule coordination:
 \begin{enumerate}
-    \item \textbf{Review Submission Endpoint (\texttt{POST /api/v1/decks/<deck\_id>/cards/<card\_id>/review}):} Accepts a JSON payload containing the user's recall rating:
+    \item \textbf{Review Submission Endpoint:}\\
+    \texttt{POST /api/v1/decks/<deck\_id>/cards/<card\_id>/review}\\
+    Accepts a JSON payload containing the user's recall rating:
     \begin{equation}
         \text{Payload} = \{ \text{rating}: \text{``again''} \mid \text{``hard''} \mid \text{``good''} \mid \text{``easy''}, \, \text{quality}: 1 \mid 3 \mid 4 \mid 5 \}
     \end{equation}
     The endpoint invokes \texttt{calculate\_sm2\_review}, updates the card document atomically in MongoDB, records an activity event in the user's longitudinal log, and recalculates active streaks.
-    \item \textbf{Aggregated Schedule Endpoint (\texttt{GET /api/v1/users/spaced-schedule}):} Scans all decks owned by the authenticated tenant, computing:
+    \item \textbf{Aggregated Schedule Endpoint:}\\
+    \texttt{GET /api/v1/users/spaced-schedule}\\
+    Scans all decks owned by the authenticated tenant, computing:
     \begin{itemize}
         \item \textbf{Total Due Count:} Cards satisfying $t_{\text{now}} \ge t_{\text{next}}$, broken down by individual deck.
         \item \textbf{Average Ease Factor:} Fleet-wide mean of $EF$ across the learner's active card corpus.
