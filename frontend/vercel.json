@@ -1,0 +1,9 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://mneme-backend-nl3d.onrender.com/api/:path*"
+    }
+  ]
+}
+
